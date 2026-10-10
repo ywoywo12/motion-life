@@ -11,34 +11,23 @@ const EXM = Object.fromEntries(D.exercises.map(e => [e.code, e]));
 const DEVM = Object.fromEntries(D.devices.map(d => [d.code, d]));
 const today = () => new Date().toISOString().slice(0, 10);
 
-/* ---------- storage (safe) ---------- */
-const store = {
-  get(k, def) { try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : def; } catch (e) { return def; } },
-  set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); return true; } catch (e) { toast('تعذّر الحفظ في المتصفح'); return false; } }
-};
-const sess = {
-  get() { try { return sessionStorage.getItem('ml_in') === '1'; } catch (e) { return window.__in === true; } },
-  set(v) { try { v ? sessionStorage.setItem('ml_in', '1') : sessionStorage.removeItem('ml_in'); } catch (e) {} window.__in = v; }
-};
-async function hash(s) {
-  try {
-    const b = await crypto.subtle.digest('SHA-256', new TextEncoder().encode('motionlife|' + s));
-    return Array.from(new Uint8Array(b)).map(x => x.toString(16).padStart(2, '0')).join('');
-  } catch (e) { return 'p:' + s; }
-}
-const DEFAULT_USER = 'admin', DEFAULT_PASS = 'Motion2026';
+/* ---------- data (via db.js: cloud sync or local) ---------- */
+const DB = window.MLDB;
+const SEC = { women: 'قسم النساء', men: 'قسم الرجال' };
+const SEC_HOURS = { women: [9, 15], men: [15, 21] };
+const allP = () => [...DB.patients.values()];
+const getP = id => DB.patients.get(id);
+const uid = pre => pre + Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+const store = { get(k, d) { try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : d; } catch (e) { return d; } } };
 
-let patients = store.get('ml_patients', []);
-const savePatients = () => store.set('ml_patients', patients);
-const getP = id => patients.find(p => p.id === id);
-
-function newPatient() {
-  const nums = patients.map(p => parseInt(p.fileNo, 10)).filter(n => !isNaN(n));
-  return {
-    id: 'p' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
+function newPatient(section, extra) {
+  const same = allP().filter(p => p.section === section);
+  const nums = same.map(p => parseInt(p.fileNo, 10)).filter(n => !isNaN(n));
+  return Object.assign({
+    id: uid('p'), section,
     created: new Date().toISOString(),
-    serial: String(patients.length + 1), shelf: '', cabinet: '', fileNo: String((nums.length ? Math.max(...nums) : 0) + 1),
-    name: '', age: '', gender: '', phone: '', job: '', evalDate: today(),
+    serial: String(same.length + 1), shelf: '', cabinet: '', fileNo: String((nums.length ? Math.max(...nums) : 0) + 1),
+    name: '', age: '', gender: section === 'women' ? 'أنثى' : 'ذكر', phone: '', job: '', evalDate: today(),
     complaint: '', chronic: '', history: '', clinical: '',
     symptoms: '', pain: null, painType: [], duration: '',
     strength: '', limits: '', notes: '', therapist: '',
@@ -46,7 +35,14 @@ function newPatient() {
     sessions: Array.from({ length: 22 }, () => ({ date: '', note: '', by: '' })),
     eval6: '', eval12: '', agreedSessions: '', agreedTotal: '',
     payments: Array.from({ length: 4 }, () => ({ amount: '', date: '' }))
-  };
+  }, extra || {});
+}
+function createPatient(extra) {
+  const make = sec => { const p = newPatient(sec, extra); DB.savePatient(p); go('p/' + p.id + '/1'); return p; };
+  if (DB.role !== 'admin') return make(DB.role);
+  openModal(`<div class="modal-h"><h3>ملف جديد — اختر القسم</h3><span class="spacer"></span><button class="x" id="mc">×</button></div>
+    <div class="row"><button class="btn big sec-w" id="sw">👩 قسم النساء</button><button class="btn big sec-m" id="sm">👨 قسم الرجال</button></div>`);
+  $('#mc').onclick = closeModal; $('#sw').onclick = () => { closeModal(); make('women'); }; $('#sm').onclick = () => { closeModal(); make('men'); };
 }
 
 /* ---------- ui helpers ---------- */
@@ -62,22 +58,33 @@ const fmt = n => n.toLocaleString('en-US');
 
 /* ---------- router ---------- */
 const go = h => { location.hash = h; };
-window.addEventListener('hashchange', render);
+window.addEventListener('hashchange', () => render());
 
+function syncBadge() {
+  if (DB.mode !== 'cloud') return `<span class="sync off" title="البيانات محفوظة على هذا الجهاز فقط">● حفظ محلي (بدون مزامنة)</span>`;
+  return DB.online ? `<span class="sync on">● متزامن لحظياً</span>` : `<span class="sync wait">● بدون إنترنت — سيُرفع تلقائياً</span>`;
+}
 function shell(active, inner) {
-  const nav = [['home', 'الرئيسية'], ['patients', 'المرضى'], ['library', 'مكتبة التمارين'], ['devices', 'الأجهزة والبروتوكولات'], ['settings', 'الإعدادات']];
-  return `<header class="topbar"><div class="topbar-in">
+  const nav = [['home', 'الرئيسية'], ['appts', 'المواعيد'], ['patients', 'المرضى'], ['library', 'مكتبة التمارين'], ['devices', 'الأجهزة والبروتوكولات'], ['settings', 'الإعدادات']];
+  return `<header class="topbar role-${DB.role}"><div class="topbar-in">
     <div class="brand" data-go="home"><b>Motion Life</b><small>مركز العلاج الفيزيائي وإعادة التأهيل</small></div>
+    <div class="who"><span class="role-tag">${esc(DB.ROLES[DB.role])}</span><span id="syncB">${syncBadge()}</span></div>
     <nav class="nav">${nav.map(([k, t]) => `<button data-go="${k}" class="${active === k ? 'on' : ''}">${t}</button>`).join('')}</nav>
   </div></header><main class="wrap">${inner}</main>`;
 }
 
+let current = '';
 function render() {
   const app = $('#app');
-  if (!sess.get()) { app.innerHTML = loginView(); bindLogin(); return; }
   const h = (location.hash || '#home').slice(1).split('/');
+  stopMic(); livePatient = null; liveRedraw = null;
+  if (h[0] === 'setup') { current = 'setup'; app.innerHTML = setupView(); bindSetup(); return; }
+  if (!DB.role) { current = 'login'; app.innerHTML = loginView(); bindLogin(); return; }
   closeModal();
+  current = h[0] || 'home';
   if (h[0] === 'p' && getP(h[1])) { app.innerHTML = shell('patients', patientView(getP(h[1]), h[2] || '1')); bindPatient(getP(h[1]), h[2] || '1'); }
+  else if (h[0] === 'p') { app.innerHTML = shell('patients', `<div class="empty">جارٍ تحميل الملف... إذا لم يظهر فقد يكون محذوفاً أو من قسم آخر.</div>`); }
+  else if (h[0] === 'appts') { app.innerHTML = shell('appts', apptsView(h[1], h[2])); bindAppts(h[1], h[2]); }
   else if (h[0] === 'patients') { app.innerHTML = shell('patients', patientsView()); bindPatients(); }
   else if (h[0] === 'library') { app.innerHTML = shell('library', libraryView()); bindLibrary(); }
   else if (h[0] === 'devices') { app.innerHTML = shell('devices', devicesView()); bindDevices(); }
@@ -89,31 +96,40 @@ function render() {
 
 /* ---------- login ---------- */
 function loginView() {
+  const cloud = DB.mode === 'cloud';
   return `<div class="login"><form class="login-box" id="lf">
-    <h1>Motion Life</h1><p>نظام ملف المريض والخطة العلاجية</p>
-    <label for="lu">اسم المستخدم</label><input id="lu" autocomplete="username" value="">
-    <label for="lp">كلمة المرور</label><input id="lp" type="password" autocomplete="current-password">
-    <button class="btn big" style="width:100%;margin-top:20px">دخول</button>
-    <div class="err" id="lerr"></div></form></div>`;
+    <h1>Motion Life</h1><p>نظام ملف المريض والمواعيد</p>
+    <div class="who-pick">
+      <button type="button" class="wp w" data-u="women">👩<b>قسم النساء</b></button>
+      <button type="button" class="wp m" data-u="men">👨<b>قسم الرجال</b></button>
+      <button type="button" class="wp a" data-u="admin">🔑<b>الإدارة</b></button>
+    </div>
+    <label for="lu">اسم المستخدم</label><input id="lu" autocomplete="username" value="" dir="ltr">
+    <label for="lp">كلمة المرور</label><input id="lp" type="password" autocomplete="current-password" dir="ltr">
+    <button class="btn big" style="width:100%;margin-top:20px" id="lb">دخول</button>
+    <div class="err" id="lerr"></div>
+    <div class="login-foot">${cloud ? '<span class="sync on">● المزامنة اللحظية مفعّلة</span>' : '<span class="sync off">● وضع الحفظ المحلي</span>'} · <a href="#setup">إعداد المزامنة</a></div>
+  </form></div>`;
 }
 function bindLogin() {
+  $$('.wp').forEach(b => b.onclick = () => { $('#lu').value = b.dataset.u; $$('.wp').forEach(x => x.classList.toggle('on', x === b)); $('#lp').focus(); });
   $('#lu').focus();
   $('#lf').addEventListener('submit', async e => {
-    e.preventDefault();
-    const auth = store.get('ml_auth', null);
-    const u = $('#lu').value.trim(), p = $('#lp').value;
-    const ok = auth ? (u === auth.user && (await hash(p)) === auth.hash) : (u === DEFAULT_USER && p === DEFAULT_PASS);
-    if (ok) { sess.set(true); if (!location.hash || location.hash === '#login') location.hash = '#home'; render(); }
-    else $('#lerr').textContent = 'اسم المستخدم أو كلمة المرور غير صحيحة';
+    e.preventDefault(); $('#lerr').textContent = ''; $('#lb').disabled = true; $('#lb').textContent = '...';
+    try { await DB.login($('#lu').value, $('#lp').value); if (!location.hash || location.hash === '#login') location.hash = '#home'; render(); }
+    catch (err) { $('#lerr').textContent = err && err.code === 'auth/network-request-failed' ? 'لا يوجد اتصال بالإنترنت' : 'اسم المستخدم أو كلمة المرور غير صحيحة'; $('#lb').disabled = false; $('#lb').textContent = 'دخول'; }
   });
 }
 
 /* ---------- home ---------- */
 function homeView() {
+  const patients = allP();
+  const todayA = [...DB.appts.values()].filter(a => a.date === today() && a.status !== 'cancelled').length;
   const recent = [...patients].sort((a, b) => (b.updated || b.created).localeCompare(a.updated || a.created)).slice(0, 5);
-  return `<div class="hello">أهلاً بك 👋 ماذا تريد أن تفعل؟</div>
+  return `<div class="hello">أهلاً بك — ${esc(DB.ROLES[DB.role])} 👋 ماذا تريد أن تفعل؟</div>
   <div class="tiles">
-    <div class="tile main" id="newP"><div class="ic">➕</div><div><b>مريض جديد</b><span>افتح ملفاً وابدأ التقييم</span></div></div>
+    <div class="tile main" data-go="appts"><div class="ic">📅</div><div><b>مواعيد اليوم</b><span>${todayA} موعد محجوز اليوم</span></div></div>
+    <div class="tile" id="newP"><div class="ic">➕</div><div><b>مريض جديد</b><span>افتح ملفاً وابدأ التقييم</span></div></div>
     <div class="tile" data-go="patients"><div class="ic">📁</div><div><b>ملفات المرضى</b><span>${patients.length} ملف محفوظ</span></div></div>
     <div class="tile" data-go="library"><div class="ic">🏃</div><div><b>مكتبة التمارين</b><span>${D.exercises.length} تمريناً مع رسوم توضيحية</span></div></div>
     <div class="tile" data-go="devices"><div class="ic">⚡</div><div><b>الأجهزة والبروتوكولات</b><span>${D.devices.length} جهازاً وبرامجها</span></div></div>
@@ -121,7 +137,7 @@ function homeView() {
   ${recent.length ? `<h3 style="color:var(--navy);margin:26px 0 6px">آخر الملفات</h3><div class="plist">${recent.map(pCard).join('')}</div>` : ''}`;
 }
 document.addEventListener('click', e => {
-  if (e.target.closest('#newP')) { const p = newPatient(); patients.push(p); savePatients(); go('p/' + p.id + '/1'); }
+  if (e.target.closest('#newP')) createPatient();
   const pc = e.target.closest('.pcard'); if (pc) go('p/' + pc.dataset.id + '/1');
 });
 function pCard(p) {
@@ -129,7 +145,7 @@ function pCard(p) {
   const done = p.sessions.filter(s => s.date).length;
   return `<div class="pcard" data-id="${p.id}"><div class="av">${esc(ini)}</div><div style="flex:1">
     <b>${esc(p.name || 'بدون اسم')}</b><div class="m">رقم الملف: ${esc(p.fileNo)} · ${esc(p.phone || '—')} · ${esc(p.complaint ? p.complaint.slice(0, 40) : '')}</div></div>
-    <span class="badge">${done} / 22 جلسة</span></div>`;
+    ${DB.role === 'admin' ? `<span class="badge sec-${p.section}">${SEC[p.section] || ''}</span>` : ''}<span class="badge">${done} / 22 جلسة</span></div>`;
 }
 
 /* ---------- patients list ---------- */
@@ -141,10 +157,11 @@ function patientsView() {
 function bindPatients() {
   const draw = () => {
     const q = $('#ps').value.trim();
-    const list = patients.filter(p => !q || [p.name, p.fileNo, p.phone].join(' ').includes(q)).sort((a, b) => (b.updated || b.created).localeCompare(a.updated || a.created));
+    const list = allP().filter(p => !q || [p.name, p.fileNo, p.phone].join(' ').includes(q)).sort((a, b) => (b.updated || b.created).localeCompare(a.updated || a.created));
     $('#pl').innerHTML = list.length ? list.map(pCard).join('') : `<div class="empty">لا توجد ملفات بعد. اضغط «مريض جديد» للبدء.</div>`;
   };
   $('#ps').addEventListener('input', draw); draw();
+  liveRedraw = draw;
 }
 
 /* ---------- patient file ---------- */
@@ -179,11 +196,11 @@ function page1(p) {
   <div class="box"><div class="box-t">الشكوى الرئيسية والتاريخ الصحي</div><div class="box-b">
     <div class="grid2"><div class="fcol"><span class="lbl">الشكوى الرئيسية</span>${ta('complaint', 2, p.complaint)}</div>
     <div class="fcol"><span class="lbl">الأمراض المزمنة / الأدوية / العمليات السابقة</span>${ta('chronic', 2, p.chronic)}</div></div>
-    <div class="fcol" style="margin-top:10px"><span class="lbl">القصة المرضية</span>${ta('history', 4, p.history)}</div>
+    <div class="fcol" style="margin-top:10px"><span class="lbl lbl-mic">القصة المرضية ${micBtn('history')}</span>${ta('history', 4, p.history)}</div>
   </div></div>
   <div class="box"><div class="box-t">التقييم السريري</div><div class="box-b">${ta('clinical', 6, p.clinical)}</div></div>
   <div class="box"><div class="box-t">الأعراض الحالية ومقياس الألم</div><div class="box-b grid2">
-    <div class="fcol"><span class="lbl">الأعراض الحالية</span>${ta('symptoms', 3, p.symptoms)}</div>
+    <div class="fcol"><span class="lbl lbl-mic">الأعراض الحالية ${micBtn('symptoms')}</span>${ta('symptoms', 3, p.symptoms)}</div>
     <div class="fcol"><div class="f" style="align-items:center"><label>شدة الألم:</label>
       <div class="pain" id="pain">${Array.from({ length: 11 }, (_, i) => `<button type="button" data-v="${i}" class="${p.pain === i ? 'on' : ''}" style="${p.pain === i ? 'background:' + PAIN_C[i] : ''}">${i}</button>`).join('')}</div></div>
       <div style="margin-top:8px">${pt.map(t => `<label class="chk"><input type="checkbox" data-pt="${t}" ${p.painType.includes(t) ? 'checked' : ''}>${t}</label>`).join('')}</div>
@@ -191,7 +208,7 @@ function page1(p) {
   </div></div>
   <div class="box"><div class="box-t">القوة العضلية والقيود الحالية</div><div class="box-b grid2">
     <div class="fcol"><span class="lbl">القوة العضلية</span>${ta('strength', 3, p.strength)}</div>
-    <div class="fcol"><span class="lbl">القيود / الصعوبات الحالية</span>${ta('limits', 3, p.limits)}</div>
+    <div class="fcol"><span class="lbl lbl-mic">القيود / الصعوبات الحالية ${micBtn('limits')}</span>${ta('limits', 3, p.limits)}</div>
   </div></div>
   <div class="sign">${inp('notes', 'ملاحظات عامة', 'text', p.notes)}${inp('therapist', 'اسم / توقيع المعالج', 'text', p.therapist)}</div>
   </div>
@@ -211,7 +228,7 @@ function page2(p) {
     <div class="f"><label>رقم الملف:</label><input value="${esc(p.fileNo)}" readonly tabindex="-1"></div>
     <div class="f"><label>اسم المريض:</label><input value="${esc(p.name)}" readonly tabindex="-1"></div>
   </div>
-  <div class="box"><div class="box-t">الخطة العلاجية</div><div class="box-b">
+  <div class="box"><div class="box-t lbl-mic">الخطة العلاجية ${micBtn('plan')}</div><div class="box-b">
     ${ta('plan', 4, p.plan)}
     <div class="plan-sub"><h4>⚡ الأجهزة العلاجية والبروتوكولات <span class="cnt">${p.devices.length}</span><span class="spacer"></span><button class="btn sm" id="addDev">➕ إضافة جهاز</button></h4>
       <div id="devList">${devListHTML(p)}</div></div>
@@ -253,37 +270,85 @@ function exListHTML(p) {
       <button class="x" data-rex="${i}" title="حذف">×</button></div>`; }).join('')}</div>`;
 }
 
+let livePatient = null, liveRedraw = null;
 function bindPatient(p, tab) {
   let t;
-  const touch = () => { p.updated = new Date().toISOString(); clearTimeout(t); $('#sv').textContent = '...'; t = setTimeout(() => { if (savePatients()) $('#sv').textContent = '✓ تم الحفظ تلقائياً'; }, 350); };
-  $$('[data-k]').forEach(el => el.addEventListener(el.type === 'radio' ? 'change' : 'input', () => { p[el.dataset.k] = el.value; touch(); if (el.dataset.k === 'agreedTotal') calc(); }));
-  $$('[data-pt]').forEach(el => el.addEventListener('change', () => { const v = el.dataset.pt; p.painType = p.painType.filter(x => x !== v); if (el.checked) p.painType.push(v); touch(); }));
+  const dirty = DB.dirty[p.id] = DB.dirty[p.id] || new Set();
+  const touch = (...keys) => {
+    keys.forEach(k => dirty.add(k)); clearTimeout(t); $('#sv').textContent = '...';
+    t = setTimeout(() => { const ks = [...dirty]; dirty.clear();
+      DB.savePatient(p, ks).then(() => { if ($('#sv')) $('#sv').textContent = '✓ تم الحفظ'; }).catch(() => { if ($('#sv')) $('#sv').textContent = '⚠️ لم يُحفظ — تحقق من الاتصال'; });
+      if (DB.mode === 'cloud' && $('#sv')) $('#sv').textContent = DB.online ? '✓ تم الحفظ والمزامنة' : '✓ محفوظ — سيُزامن عند عودة الإنترنت';
+    }, 400); };
+  $$('[data-k]').forEach(el => el.addEventListener(el.type === 'radio' ? 'change' : 'input', () => { p[el.dataset.k] = el.value; touch(el.dataset.k); if (el.dataset.k === 'agreedTotal') calc(); }));
+  $$('[data-pt]').forEach(el => el.addEventListener('change', () => { const v = el.dataset.pt; p.painType = p.painType.filter(x => x !== v); if (el.checked) p.painType.push(v); touch('painType'); }));
   const pain = $('#pain');
-  if (pain) pain.addEventListener('click', e => { const b = e.target.closest('button'); if (!b) return; const v = +b.dataset.v; p.pain = p.pain === v ? null : v;
-    $$('button', pain).forEach(x => { const on = +x.dataset.v === p.pain; x.classList.toggle('on', on); x.style.background = on ? PAIN_C[p.pain] : ''; }); touch(); });
-  $$('[data-s]').forEach(el => el.addEventListener('input', () => { p.sessions[+el.dataset.s][el.dataset.f] = el.value; touch(); }));
+  const drawPain = () => $$('button', pain).forEach(x => { const on = +x.dataset.v === p.pain; x.classList.toggle('on', on); x.style.background = on ? PAIN_C[p.pain] : ''; });
+  if (pain) pain.addEventListener('click', e => { const b = e.target.closest('button'); if (!b) return; const v = +b.dataset.v; p.pain = p.pain === v ? null : v; drawPain(); touch('pain'); });
+  $$('[data-s]').forEach(el => el.addEventListener('input', () => { p.sessions[+el.dataset.s][el.dataset.f] = el.value; touch('sessions'); }));
   const calc = () => { const paid = p.payments.reduce((a, x) => a + num(x.amount), 0); if ($('#paid')) { $('#paid').value = paid ? fmt(paid) : ''; $('#remain').value = p.agreedTotal ? fmt(num(p.agreedTotal) - paid) : ''; } };
-  $$('[data-pay]').forEach(el => el.addEventListener('input', () => { p.payments[+el.dataset.pay][el.dataset.f] = el.value; touch(); calc(); }));
+  $$('[data-pay]').forEach(el => el.addEventListener('input', () => { p.payments[+el.dataset.pay][el.dataset.f] = el.value; touch('payments'); calc(); }));
+  bindMics();
   $('#prt').addEventListener('click', () => printPatient(p, false));
   $('#prtEx').addEventListener('click', () => p.exercises.length ? printPatient(p, true) : toast('أضف تمارين في الخطة العلاجية أولاً'));
-  $('#delP').addEventListener('click', () => openModal(`<div class="modal-h"><h3>حذف ملف ${esc(p.name || 'المريض')}؟</h3></div><p>لا يمكن التراجع عن الحذف.</p>
-    <div class="row"><button class="btn danger" id="yes">نعم، احذف</button><button class="btn ghost" id="no">إلغاء</button></div>`) ||
-    ($('#yes').onclick = () => { patients = patients.filter(x => x.id !== p.id); savePatients(); closeModal(); go('patients'); }, $('#no').onclick = closeModal));
+  $('#delP').addEventListener('click', () => {
+    openModal(`<div class="modal-h"><h3>حذف ملف ${esc(p.name || 'المريض')}؟</h3></div><p>لا يمكن التراجع عن الحذف، وسيُحذف من كل الأجهزة.</p>
+    <div class="row"><button class="btn danger" id="yes">نعم، احذف</button><button class="btn ghost" id="no">إلغاء</button></div>`);
+    $('#yes').onclick = () => { clearTimeout(t); DB.deletePatient(p); closeModal(); go('patients'); }; $('#no').onclick = closeModal; });
+  /* تحديث لحظي عند تعديل نفس الملف من جهاز آخر */
+  let lastLists = JSON.stringify([p.devices, p.exercises]);
+  livePatient = { id: p.id, apply() {
+    $$('[data-k]').forEach(el => { if (el === document.activeElement) return; const v = p[el.dataset.k];
+      if (el.type === 'radio') el.checked = el.value === v; else if (el.value !== (v == null ? '' : String(v))) el.value = v == null ? '' : v; });
+    if (pain) drawPain();
+    $$('[data-pt]').forEach(el => { el.checked = p.painType.includes(el.dataset.pt); });
+    $$('[data-s]').forEach(el => { if (el !== document.activeElement) el.value = p.sessions[+el.dataset.s][el.dataset.f] || ''; });
+    $$('[data-pay]').forEach(el => { if (el !== document.activeElement) el.value = p.payments[+el.dataset.pay][el.dataset.f] || ''; });
+    calc();
+    const nl = JSON.stringify([p.devices, p.exercises]);
+    if (tab === '2' && nl !== lastLists && $('#modal').classList.contains('hidden')) { lastLists = nl; redrawLists(); }
+    $('#sv').textContent = '↻ تم التحديث من جهاز آخر';
+  } };
   if (tab !== '2') return;
-  const redraw = () => { $('#devList').innerHTML = devListHTML(p); $('#exList').innerHTML = exListHTML(p); bindLists(); touch();
-    $$('.plan-sub .cnt')[0].textContent = p.devices.length; $$('.plan-sub .cnt')[1].textContent = p.exercises.length; };
+  function redrawLists() { $('#devList').innerHTML = devListHTML(p); $('#exList').innerHTML = exListHTML(p); bindLists();
+    $$('.plan-sub .cnt')[0].textContent = p.devices.length; $$('.plan-sub .cnt')[1].textContent = p.exercises.length; }
+  const redraw = () => { redrawLists(); lastLists = JSON.stringify([p.devices, p.exercises]); touch('devices', 'exercises'); };
   function bindLists() {
     $$('[data-rdev]').forEach(b => b.onclick = () => { p.devices.splice(+b.dataset.rdev, 1); redraw(); });
     $$('[data-edev]').forEach(b => b.onclick = () => { const d = p.devices[+b.dataset.edev]; deviceParamsStep(DEVM[d.dev], d.program, d.values, d, v => { p.devices[+b.dataset.edev] = v; redraw(); }); });
     $$('[data-rex]').forEach(b => b.onclick = () => { p.exercises.splice(+b.dataset.rex, 1); redraw(); });
-    $$('[data-exd]').forEach(el => el.oninput = () => { p.exercises[+el.dataset.exd].dosage = el.value; touch(); });
-    $$('[data-exn]').forEach(el => el.oninput = () => { p.exercises[+el.dataset.exn].note = el.value; touch(); });
+    $$('[data-exd]').forEach(el => el.oninput = () => { p.exercises[+el.dataset.exd].dosage = el.value; touch('exercises'); });
+    $$('[data-exn]').forEach(el => el.oninput = () => { p.exercises[+el.dataset.exn].note = el.value; touch('exercises'); });
     $$('[data-exinfo]').forEach(el => el.onclick = () => exInfo(el.dataset.exinfo));
   }
   bindLists();
   $('#addDev').addEventListener('click', () => devicePicker(v => { p.devices.push(v); redraw(); toast('تمت إضافة الجهاز إلى الخطة'); }));
   $('#addEx').addEventListener('click', () => exercisePicker(p.exercises.map(x => x.code), codes => {
     codes.forEach(c => { if (!p.exercises.some(x => x.code === c)) p.exercises.push({ code: c, dosage: EXM[c].dosage, note: '' }); }); redraw(); toast('تمت إضافة ' + codes.length + ' تمرين'); }));
+}
+
+/* ---------- voice to text (التسجيل الصوتي وتحويله لكتابة) ---------- */
+const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+const micBtn = k => `<button type="button" class="mic" data-mic="${k}" title="سجّل بصوتك وسيُكتب تلقائياً">🎤 <span>تسجيل صوتي</span></button>`;
+let rec = null, recBtn = null;
+function stopMic() { if (rec) { try { rec.stop(); } catch (e) {} } }
+function bindMics() {
+  $$('[data-mic]').forEach(b => b.onclick = () => {
+    if (!SR) return openModal(`<div class="modal-h"><h3>التسجيل الصوتي غير مدعوم في هذا المتصفح</h3><span class="spacer"></span><button class="x" id="mc">×</button></div>
+      <p>افتح الموقع من متصفح <b>Google Chrome</b> أو <b>Microsoft Edge</b> (على الكمبيوتر أو الأندرويد)، أو <b>Safari</b> على الآيفون.<br>
+      بديل سريع: اضغط على الحقل ثم زر الميكروفون 🎤 في لوحة مفاتيح الجوال.</p>`) || ($('#mc').onclick = closeModal);
+    if (recBtn === b) return stopMic();
+    stopMic();
+    const ta = document.querySelector(`[data-k="${b.dataset.mic}"]`);
+    const r = new SR(); r.lang = 'ar-SY'; r.continuous = true; r.interimResults = true;
+    const base = ta.value ? ta.value.replace(/\s*$/, '') + ' ' : '';
+    let finalTxt = '';
+    r.onresult = ev => { let interim = ''; for (let i = ev.resultIndex; i < ev.results.length; i++) { const x = ev.results[i]; if (x.isFinal) finalTxt += x[0].transcript.trim() + ' '; else interim += x[0].transcript; }
+      ta.value = base + finalTxt + interim; ta.dispatchEvent(new Event('input')); };
+    r.onerror = ev => { if (ev.error === 'not-allowed' || ev.error === 'service-not-allowed') toast('اسمح للموقع باستخدام الميكروفون من إعدادات المتصفح'); else if (ev.error === 'network') toast('التسجيل الصوتي يحتاج إنترنت'); };
+    r.onend = () => { b.classList.remove('rec'); $('span', b).textContent = 'تسجيل صوتي'; ta.value = base + finalTxt; ta.dispatchEvent(new Event('input')); rec = null; recBtn = null; };
+    try { r.start(); rec = r; recBtn = b; b.classList.add('rec'); $('span', b).textContent = 'إيقاف التسجيل'; toast('🎤 تكلّم الآن... اضغط مرة ثانية للإيقاف'); } catch (e) { toast('تعذّر تشغيل الميكروفون'); }
+  });
 }
 
 /* ---------- device picker (3 easy steps) ---------- */
@@ -399,30 +464,182 @@ function bindDevices() {
     $('#qs').oninput = draw; draw(); $('#mc').onclick = closeModal; });
 }
 
+/* ---------- appointments (المواعيد) ---------- */
+const DAYS = ['الأحد', 'الاثنين', 'الثلاثاء', 'الأربعاء', 'الخميس', 'الجمعة', 'السبت'];
+const ST = { booked: 'محجوز', done: 'حضر', absent: 'لم يحضر', cancelled: 'ملغى' };
+const t12 = hm => { let [h, m] = hm.split(':').map(Number); const ap = h < 12 ? 'ص' : 'م'; h = h % 12 || 12; return `${h}:${String(m).padStart(2, '0')} ${ap}`; };
+const slotsOf = sec => { const [a, b] = SEC_HOURS[sec], out = []; for (let h = a; h < b; h++) for (let m = 0; m < 60; m += 10) out.push(String(h).padStart(2, '0') + ':' + String(m).padStart(2, '0')); return out; };
+const addDays = (d, n) => { const x = new Date(d + 'T12:00:00'); x.setDate(x.getDate() + n); return x.toISOString().slice(0, 10); };
+const dayName = d => DAYS[new Date(d + 'T12:00:00').getDay()];
+const nowHM = () => { const n = new Date(); return String(n.getHours()).padStart(2, '0') + ':' + String(n.getMinutes()).padStart(2, '0'); };
+function apptsView(sec, date) {
+  sec = DB.sections().includes(sec) ? sec : DB.sections()[0]; date = /^\d{4}-\d{2}-\d{2}$/.test(date || '') ? date : today();
+  const [a, b] = SEC_HOURS[sec];
+  return `<div class="appt-head sec-${sec}">
+    ${DB.role === 'admin' ? `<div class="sec-tabs">${['women', 'men'].map(s => `<button class="sec-tab ${s === sec ? 'on' : ''} t-${s}" data-go="appts/${s}/${date}">${s === 'women' ? '👩' : '👨'} ${SEC[s]} <small>${t12(SEC_HOURS[s][0] + ':00')} – ${t12(SEC_HOURS[s][1] + ':00')}</small></button>`).join('')}</div>` : ''}
+    <h2>${sec === 'women' ? '👩' : '👨'} مواعيد ${SEC[sec]} <small>من ${t12(a + ':00')} حتى ${t12(b + ':00')} · موعد كل 10 دقائق</small></h2>
+    <div class="datebar">
+      <button class="btn ghost" data-go="appts/${sec}/${addDays(date, -1)}">→ اليوم السابق</button>
+      <div class="dbox"><b>${dayName(date)}</b><input type="date" id="dpick" value="${date}"></div>
+      <button class="btn ghost" data-go="appts/${sec}/${addDays(date, 1)}">اليوم التالي ←</button>
+      ${date !== today() ? `<button class="btn light" data-go="appts/${sec}/${today()}">اليوم</button>` : '<span class="badge">اليوم</span>'}
+    </div>
+    <div class="appt-sum" id="asum"></div>
+  </div>
+  <div class="agrid" id="agrid"></div>`;
+}
+function bindAppts(sec, date) {
+  sec = DB.sections().includes(sec) ? sec : DB.sections()[0]; date = /^\d{4}-\d{2}-\d{2}$/.test(date || '') ? date : today();
+  $('#dpick').onchange = e => e.target.value && go(`appts/${sec}/${e.target.value}`);
+  const draw = () => {
+    const list = [...DB.appts.values()].filter(x => x.section === sec && x.date === date);
+    const by = {}; list.forEach(x => (by[x.time] = by[x.time] || []).push(x));
+    const slots = slotsOf(sec), isToday = date === today(), now = nowHM();
+    const cnt = k => list.filter(x => (x.status || 'booked') === k).length;
+    const free = slots.filter(t => !(by[t] || []).some(x => x.status !== 'cancelled')).length;
+    $('#asum').innerHTML = `<span class="sb booked">محجوز: ${cnt('booked')}</span><span class="sb done">حضر: ${cnt('done')}</span><span class="sb absent">لم يحضر: ${cnt('absent')}</span><span class="sb cancelled">ملغى: ${cnt('cancelled')}</span><span class="sb free">مواعيد متاحة: ${free} من ${slots.length}</span>`;
+    let html = '', curHour = '';
+    slots.forEach((t, i) => {
+      const h = t.slice(0, 2);
+      if (h !== curHour) { if (curHour) html += '</div>'; curHour = h; html += `<div class="hour"><div class="hour-t">${t12(h + ':00')}</div>`; }
+      const items = (by[t] || []).sort((x, y) => (x.created || '').localeCompare(y.created || ''));
+      const next = slots[i + 1] || '99:99';
+      const isNow = isToday && now >= t && now < next;
+      const past = isToday && now >= next || date < today();
+      html += `<div class="slot ${items.length ? 'has' : ''} ${isNow ? 'now' : ''} ${past ? 'past' : ''}"><div class="slot-t">${t12(t)}</div><div class="slot-b">
+        ${items.map(x => `<button class="ap st-${x.status || 'booked'}" data-ap="${x.id}"><b>${esc(x.name || 'بدون اسم')}</b>${x.phone ? `<span dir="ltr">${esc(x.phone)}</span>` : ''}${x.note ? `<span>· ${esc(x.note)}</span>` : ''}<i>${ST[x.status || 'booked']}</i></button>`).join('')}
+        <button class="add-ap ${items.length ? 'small' : ''}" data-add="${t}">${items.length ? '+' : '+ حجز موعد'}</button></div></div>`;
+    });
+    $('#agrid').innerHTML = html + '</div>';
+    $$('[data-add]').forEach(b => b.onclick = () => apptModal({ section: sec, date, time: b.dataset.add }));
+    $$('[data-ap]').forEach(b => b.onclick = () => apptModal(DB.appts.get(b.dataset.ap)));
+  };
+  draw(); liveRedraw = draw;
+  if (date === today()) { const n = $('.slot.now'); if (n) setTimeout(() => n.scrollIntoView({ block: 'center' }), 50); }
+}
+function apptModal(a) {
+  const isNew = !a.id; a = Object.assign({ name: '', phone: '', note: '', by: '', status: 'booked', patientId: '' }, a);
+  const pts = allP().filter(p => p.section === a.section);
+  openModal(`<div class="modal-h"><h3>${isNew ? 'حجز موعد جديد' : 'تفاصيل الموعد'} — ${SEC[a.section]}</h3><span class="spacer"></span><button class="x" id="mc">×</button></div>
+    <div class="pform">
+      <div class="fcol"><span class="lbl">التاريخ</span><input type="date" id="ad" value="${a.date}"></div>
+      <div class="fcol"><span class="lbl">الوقت</span><select id="at" class="sel">${slotsOf(a.section).map(t => `<option value="${t}" ${t === a.time ? 'selected' : ''}>${t12(t)}</option>`).join('')}</select></div>
+      <div class="fcol" style="grid-column:1/-1;position:relative"><span class="lbl">اسم المريض <small style="color:var(--muted);font-weight:400">(اكتب للبحث في الملفات)</small></span><input id="an" value="${esc(a.name)}" autocomplete="off"><div class="sugg hidden" id="sg"></div></div>
+      <div class="fcol"><span class="lbl">رقم الهاتف</span><input id="ap" value="${esc(a.phone)}" dir="ltr" inputmode="tel"></div>
+      <div class="fcol"><span class="lbl">المعالج</span><input id="ab" value="${esc(a.by)}"></div>
+      <div class="fcol" style="grid-column:1/-1"><span class="lbl">ملاحظة (نوع الجلسة، جلسة رقم...)</span><input id="ano" value="${esc(a.note)}"></div>
+      ${isNew ? '' : `<div class="fcol" style="grid-column:1/-1"><span class="lbl">حالة الموعد</span><div class="stbtns">${Object.entries(ST).map(([k, v]) => `<button type="button" class="stb st-${k} ${a.status === k ? 'on' : ''}" data-st="${k}">${v}</button>`).join('')}</div></div>`}
+    </div>
+    <div id="linkp" style="margin-top:10px"></div>
+    <div class="modal-f"><button class="btn big" id="ok">${isNew ? '✓ حجز' : 'حفظ'}</button><button class="btn ghost" id="cn">إلغاء</button><span class="spacer"></span>${isNew ? '' : '<button class="btn danger" id="del">حذف الموعد</button>'}</div>`);
+  let pid = a.patientId, st = a.status;
+  const linkUI = () => { const p = pid && getP(pid);
+    $('#linkp').innerHTML = p ? `<span class="badge" style="background:#e7f6ee;color:var(--ok)">مرتبط بملف رقم ${esc(p.fileNo)}</span> <button class="btn light sm" id="openf">📁 فتح ملف المريض</button>`
+      : `<button class="btn light sm" id="mkf">➕ إنشاء ملف جديد لهذا المريض</button>`;
+    if ($('#openf')) $('#openf').onclick = () => { save(true); go('p/' + pid + '/1'); };
+    if ($('#mkf')) $('#mkf').onclick = () => { const np = newPatient(a.section, { name: $('#an').value.trim(), phone: $('#ap').value.trim() }); DB.savePatient(np); pid = np.id; save(true); go('p/' + np.id + '/1'); };
+  };
+  linkUI();
+  $('#an').oninput = () => { const q = $('#an').value.trim(); pid = '';
+    const m = q ? pts.filter(p => (p.name || '').includes(q) || (p.phone || '').includes(q)).slice(0, 6) : [];
+    $('#sg').innerHTML = m.map(p => `<button type="button" data-pid="${p.id}"><b>${esc(p.name)}</b> <small>ملف ${esc(p.fileNo)} · ${esc(p.phone || '')}</small></button>`).join('');
+    $('#sg').classList.toggle('hidden', !m.length);
+    $$('[data-pid]', $('#sg')).forEach(b => b.onclick = () => { const p = getP(b.dataset.pid); pid = p.id; $('#an').value = p.name; $('#ap').value = p.phone || ''; $('#sg').classList.add('hidden'); linkUI(); });
+    linkUI(); };
+  $$('[data-st]').forEach(b => b.onclick = () => { st = b.dataset.st; $$('[data-st]').forEach(x => x.classList.toggle('on', x === b)); });
+  function save(silent) {
+    const name = $('#an').value.trim(); if (!name && !silent) { toast('اكتب اسم المريض'); return false; }
+    const o = Object.assign({}, a, { id: a.id || uid('a'), created: a.created || new Date().toISOString(), date: $('#ad').value || a.date, time: $('#at').value,
+      name, phone: $('#ap').value.trim(), by: $('#ab').value.trim(), note: $('#ano').value.trim(), status: st, patientId: pid || '' });
+    DB.saveAppt(o); a.id = o.id; if (liveRedraw && current === 'appts') liveRedraw(); return true;
+  }
+  $('#ok').onclick = () => { if (save()) { closeModal(); toast(isNew ? 'تم حجز الموعد' : 'تم الحفظ'); } };
+  $('#cn').onclick = closeModal; $('#mc').onclick = closeModal;
+  if ($('#del')) $('#del').onclick = () => { DB.deleteAppt(a); closeModal(); if (liveRedraw) liveRedraw(); toast('تم حذف الموعد'); };
+  if (isNew) $('#an').focus();
+}
+
 /* ---------- settings ---------- */
 function settingsView() {
-  const auth = store.get('ml_auth', null);
   return `<h2 style="margin:0 0 14px;color:var(--navy)">الإعدادات</h2>
-  <div class="sheet"><h3 style="margin-top:0">🔑 تغيير بيانات الدخول</h3>
-    <div class="pform"><div class="fcol"><span class="lbl">اسم المستخدم الجديد</span><input id="nu" value="${esc(auth ? auth.user : DEFAULT_USER)}"></div>
-    <div class="fcol"><span class="lbl">كلمة المرور الجديدة</span><input id="np" type="password"></div></div>
+  <div class="sheet"><h3 style="margin-top:0">🔑 تغيير كلمة المرور — ${esc(DB.ROLES[DB.role])}</h3>
+    <div class="pform"><div class="fcol"><span class="lbl">كلمة المرور الحالية</span><input id="op" type="password" dir="ltr"></div>
+    <div class="fcol"><span class="lbl">كلمة المرور الجديدة (6 أحرف على الأقل)</span><input id="np" type="password" dir="ltr"></div></div>
     <button class="btn" id="saveAuth" style="margin-top:12px">حفظ</button></div>
-  <div class="sheet"><h3 style="margin-top:0">💾 النسخ الاحتياطي</h3>
-    <p style="color:var(--muted);margin-top:0">الملفات محفوظة على هذا الجهاز وهذا المتصفح. خذ نسخة احتياطية أسبوعياً، واستخدمها لنقل الملفات إلى جهاز آخر.</p>
+  <div class="sheet"><h3 style="margin-top:0">🔄 المزامنة</h3>
+    ${DB.mode === 'cloud' ? `<p style="margin:0" class="sync on">● المزامنة اللحظية مفعّلة — أي تعديل يظهر فوراً على كل الأجهزة المسجّلة بنفس القسم.</p>`
+      : `<p style="margin-top:0" class="sync off">● الحفظ الآن على هذا الجهاز فقط.</p><a class="btn light" href="#setup">إعداد المزامنة بين الأجهزة</a>`}</div>
+  <div class="sheet"><h3 style="margin-top:0">💾 نسخة احتياطية</h3>
+    <p style="color:var(--muted);margin-top:0">تنزيل نسخة من ملفات ومواعيد ${esc(DB.ROLES[DB.role])} لحفظها عندك.</p>
     <div class="row"><button class="btn" id="exp">⬇️ تنزيل نسخة احتياطية</button>
     <label class="btn light" style="cursor:pointer">⬆️ استرجاع نسخة<input type="file" id="imp" accept=".json,application/json" hidden></label></div></div>
   <div class="sheet"><button class="btn ghost" id="out">🚪 تسجيل الخروج</button></div>`;
 }
 function bindSettings() {
-  $('#saveAuth').onclick = async () => { const u = $('#nu').value.trim(), pw = $('#np').value; if (!u || pw.length < 4) return toast('اكتب اسم مستخدم وكلمة مرور (4 أحرف على الأقل)');
-    store.set('ml_auth', { user: u, hash: await hash(pw) }); $('#np').value = ''; toast('تم حفظ بيانات الدخول الجديدة'); };
-  $('#exp').onclick = () => { const blob = new Blob([JSON.stringify({ app: 'motion-life', v: 1, at: new Date().toISOString(), patients }, null, 1)], { type: 'application/json' });
-    const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'motion-life-backup-' + today() + '.json'; document.body.appendChild(a); a.click(); a.remove(); toast('تم تنزيل النسخة الاحتياطية'); };
+  $('#saveAuth').onclick = async () => { const o = $('#op').value, n = $('#np').value; if (n.length < 6) return toast('كلمة المرور الجديدة 6 أحرف على الأقل');
+    try { await DB.changePassword(o, n); $('#op').value = $('#np').value = ''; toast('تم تغيير كلمة المرور'); } catch (e) { toast('كلمة المرور الحالية غير صحيحة'); } };
+  $('#exp').onclick = () => { const blob = new Blob([JSON.stringify({ app: 'motion-life', v: 2, at: new Date().toISOString(), role: DB.role, patients: allP(), appts: [...DB.appts.values()] }, null, 1)], { type: 'application/json' });
+    const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'motion-life-' + DB.role + '-' + today() + '.json'; document.body.appendChild(a); a.click(); a.remove(); toast('تم تنزيل النسخة الاحتياطية'); };
   $('#imp').onchange = e => { const f = e.target.files[0]; if (!f) return; const r = new FileReader();
-    r.onload = () => { try { const d = JSON.parse(r.result); if (!Array.isArray(d.patients)) throw 0; let n = 0;
-      d.patients.forEach(x => { if (x && x.id) { const i = patients.findIndex(p => p.id === x.id); if (i >= 0) patients[i] = x; else patients.push(x); n++; } });
-      savePatients(); toast('تم استرجاع ' + n + ' ملف'); } catch (err) { toast('الملف غير صالح'); } }; r.readAsText(f); };
-  $('#out').onclick = () => { sess.set(false); location.hash = ''; render(); };
+    r.onload = () => { try { const d = JSON.parse(r.result); if (!Array.isArray(d.patients)) throw 0; let n = 0; const secs = DB.sections();
+      d.patients.forEach(x => { if (!x || !x.id) return; if (!x.section) x.section = x.gender === 'ذكر' ? 'men' : 'women'; if (secs.includes(x.section)) { DB.savePatient(x); n++; } });
+      (d.appts || []).forEach(x => { if (x && x.id && secs.includes(x.section)) DB.saveAppt(x); });
+      toast('تم استرجاع ' + n + ' ملف'); } catch (err) { toast('الملف غير صالح'); } }; r.readAsText(f); };
+  $('#out').onclick = async () => { await DB.logout(); location.hash = ''; render(); };
+}
+
+/* ---------- setup (إعداد المزامنة — مرة واحدة) ---------- */
+const RULES = `rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function role() { return request.auth.token.email.split('@')[0]; }
+    function staff() { return request.auth != null
+      && request.auth.token.email.matches('.*@motionlife[.]clinic$'); }
+    match /sections/{sec}/{coll}/{id} {
+      allow read, write: if staff() && (sec == 'women' || sec == 'men')
+        && (role() == 'admin' || role() == sec);
+    }
+  }
+}`;
+function setupView() {
+  const has = DB.mode === 'cloud';
+  return `<main class="wrap" style="max-width:820px"><div class="row"><h2 style="color:var(--navy)">إعداد المزامنة بين الأجهزة</h2><span class="spacer"></span><a class="btn ghost sm" href="#home">رجوع</a></div>
+  <div class="sheet">${has ? '<p class="sync on" style="margin:0">● Firebase متصل. الخطوة المتبقية: إنشاء الحسابات (في الأسفل) إن لم تُنشأ بعد.</p>'
+    : '<p class="sync off" style="margin:0">● المزامنة غير مفعّلة بعد. اتبع الخطوات أدناه مرة واحدة فقط.</p>'}</div>
+  <div class="sheet setup">
+    <h3>١- أنشئ مشروع Firebase (مجاني)</h3>
+    <p>افتح <a href="https://console.firebase.google.com" target="_blank" rel="noopener">console.firebase.google.com</a> بحساب Google ← <b>Create a project</b> ← اسم المشروع: <b>motion-life</b> ← أكمل (يمكن إيقاف Google Analytics).</p>
+    <h3>٢- فعّل تسجيل الدخول</h3>
+    <p>من القائمة: <b>Build ← Authentication ← Get started</b> ← اختر <b>Email/Password</b> ← فعّل الخيار الأول ← <b>Save</b>.</p>
+    <h3>٣- أنشئ قاعدة البيانات</h3>
+    <p><b>Build ← Firestore Database ← Create database</b> ← اختر الموقع <b>eur3 (Europe)</b> ← <b>Start in production mode</b>.<br>
+    ثم افتح تبويب <b>Rules</b> وامسح الموجود والصق هذا النص كما هو، ثم <b>Publish</b>:</p>
+    <pre class="code" id="rules">${esc(RULES)}</pre><button class="btn light sm" id="cpR">📋 نسخ النص</button>
+    <h3>٤- اربط الموقع</h3>
+    <p>اضغط ⚙️ <b>Project settings</b> ← في الأسفل اضغط أيقونة الويب <b>&lt;/&gt;</b> ← اكتب أي اسم ← <b>Register app</b> ← انسخ الجزء <code>firebaseConfig</code> وأرسله لي في المحادثة لأثبّته بالموقع لكل الأجهزة. <br>(أو الصقه هنا لتجربته فوراً على هذا الجهاز فقط)</p>
+    <textarea id="cfg" class="lined" rows="5" dir="ltr" placeholder='const firebaseConfig = { apiKey: "...", authDomain: "...", projectId: "...", ... };'></textarea>
+    <button class="btn" id="saveCfg" style="margin-top:8px">حفظ وتجربة على هذا الجهاز</button>
+    <h3>٥- أنشئ الحسابات الثلاثة</h3>
+    ${has ? `<div class="pform">
+      <div class="fcol"><span class="lbl">كلمة مرور الإدارة (admin)</span><input id="pw_admin" dir="ltr"></div>
+      <div class="fcol"><span class="lbl">كلمة مرور قسم النساء (women)</span><input id="pw_women" dir="ltr"></div>
+      <div class="fcol"><span class="lbl">كلمة مرور قسم الرجال (men)</span><input id="pw_men" dir="ltr"></div></div>
+      <p style="color:var(--muted)">6 أحرف على الأقل لكل كلمة. احفظها في مكان آمن.</p>
+      <button class="btn" id="mkAcc">إنشاء الحسابات</button><div id="accRes" style="margin-top:10px"></div>` : '<p style="color:var(--muted)">تظهر هذه الخطوة بعد ربط Firebase.</p>'}
+    <h3>٦- (للأمان) أغلق التسجيل الجديد</h3>
+    <p>في Firebase: <b>Authentication ← Settings ← User actions</b> ← أزل علامة <b>Enable create (sign-up)</b> ← Save. هكذا لا يستطيع أحد إنشاء حساب جديد.</p>
+  </div></main>`;
+}
+function bindSetup() {
+  $('#cpR').onclick = () => { try { navigator.clipboard.writeText(RULES); toast('تم النسخ'); } catch (e) { toast('انسخه يدوياً'); } };
+  $('#saveCfg').onclick = () => { const txt = $('#cfg').value; const o = {}; let m; const re = /(\w+)\s*:\s*["']([^"']+)["']/g;
+    while ((m = re.exec(txt))) o[m[1]] = m[2];
+    if (!o.apiKey || !o.projectId) return toast('النص غير مكتمل — انسخ firebaseConfig كاملاً');
+    try { localStorage.setItem('ml_fb_cfg', JSON.stringify(o)); } catch (e) {} toast('تم الحفظ — جارٍ إعادة التحميل'); setTimeout(() => location.reload(), 800); };
+  if ($('#mkAcc')) $('#mkAcc').onclick = async () => { const pw = { admin: $('#pw_admin').value, women: $('#pw_women').value, men: $('#pw_men').value };
+    if (Object.values(pw).some(x => x.length < 6)) return toast('كل كلمة مرور 6 أحرف على الأقل');
+    $('#mkAcc').disabled = true; const r = await DB.createAccounts(pw); $('#mkAcc').disabled = false;
+    $('#accRes').innerHTML = Object.entries(r).map(([k, v]) => `<div>${esc(DB.ROLES[k])} (<b dir="ltr">${k}</b>): ${v === 'ok' ? '✅ تم الإنشاء' : v === 'exists' ? 'ℹ️ موجود مسبقاً' : '❌ ' + esc(v)}</div>`).join(''); };
 }
 
 /* ---------- printing ---------- */
@@ -477,5 +694,21 @@ function printPatient(p, exOnly) {
   imgs.forEach(i => { if (i.complete) { if (--left === 0) go2(); } else i.onload = i.onerror = () => { if (--left === 0) go2(); }; });
 }
 
-render();
+/* ---------- live updates ---------- */
+DB.on((kind, info) => {
+  if (kind === 'auth') return render();
+  if (kind === 'net') { const b = $('#syncB'); if (b) b.innerHTML = syncBadge(); return; }
+  if (kind !== 'data' || !DB.role) return;
+  if (current === 'p') {
+    const id = (location.hash.split('/')[1] || '');
+    if (!getP(id)) { if (info.ids && info.ids.includes(id)) render(); else if (!$('[data-k]')) render(); return; }
+    if (!$('[data-k]')) return render();
+    if (info.remote && info.ids && info.ids.includes(id) && livePatient && livePatient.id === id) livePatient.apply();
+    return;
+  }
+  if ((current === 'patients' || current === 'appts') && liveRedraw) return liveRedraw();
+  if (current === 'home' && $('#modal').classList.contains('hidden')) render();
+});
+setInterval(() => { if (current === 'appts' && liveRedraw && $('#modal').classList.contains('hidden')) liveRedraw(); }, 60000);
+DB.init().then(render);
 })();
