@@ -1,0 +1,860 @@
+[
+{
+"no": "1.1",
+"en": "ACHILLODYNIA (DIADYNAMIC CURRENT DF1 + CP5 X LP6)",
+"ar": "ألم وتر أخيل (تيار ثنائي الديناميكية DF1 + CP5 X LP6)",
+"group_ar": "ألم وتر أخيل"
+},
+{
+"no": "1.2",
+"en": "ACHILLODYNIA (GALVANIZATION)",
+"ar": "ألم وتر أخيل (تيار غلفاني)",
+"group_ar": "ألم وتر أخيل"
+},
+{
+"no": "2.1",
+"en": "ALGODYSTROPHY - SUDECK'S SYNDROME - POST SURGERY (GALVANIZATION)",
+"ar": "الحثل الودي الانعكاسي (متلازمة سوديك) بعد الجراحة (تيار غلفاني)",
+"group_ar": "الحثل الودي الانعكاسي (متلازمة سوديك) بعد الجراحة"
+},
+{
+"no": "2.2",
+"en": "ALGODYSTROPHY - SUDECK'S SYNDROME - POST SURGERY (TENS)",
+"ar": "الحثل الودي الانعكاسي (متلازمة سوديك) بعد الجراحة (TENS)",
+"group_ar": "الحثل الودي الانعكاسي (متلازمة سوديك) بعد الجراحة"
+},
+{
+"no": "2.3",
+"en": "ALGODYSTROPHY - SUDECK'S SYNDROME - POST SURGERY (2-POLE INTERFERENCE)",
+"ar": "الحثل الودي الانعكاسي (متلازمة سوديك) بعد الجراحة (تداخلي ثنائي الأقطاب)",
+"group_ar": "الحثل الودي الانعكاسي (متلازمة سوديك) بعد الجراحة"
+},
+{
+"no": "2.4",
+"en": "ALGODYSTROPHY - SUDECK'S SYNDROME - POST SURGERY (DIADYNAMIC CURRENT DF)",
+"ar": "الحثل الودي الانعكاسي (متلازمة سوديك) بعد الجراحة (تيار ثنائي الديناميكية DF)",
+"group_ar": "الحثل الودي الانعكاسي (متلازمة سوديك) بعد الجراحة"
+},
+{
+"no": "3.1",
+"en": "ANALGESIA – ACUTE (TENS)",
+"ar": "تسكين الألم الحاد (TENS)",
+"group_ar": "تسكين الألم الحاد"
+},
+{
+"no": "3.2",
+"en": "ANALGESIA – ACUTE (TRÄBERT CURRENT)",
+"ar": "تسكين الألم الحاد (تيار ترابرت)",
+"group_ar": "تسكين الألم الحاد"
+},
+{
+"no": "3.3",
+"en": "ANALGESIA – ACUTE (DIPOLE VECTOR FIELD)",
+"ar": "تسكين الألم الحاد (حقل متجه ثنائي القطب)",
+"group_ar": "تسكين الألم الحاد"
+},
+{
+"no": "3.4",
+"en": "ANALGESIA – ACUTE (4-POLE INTERFERENCE)",
+"ar": "تسكين الألم الحاد (تداخلي رباعي الأقطاب)",
+"group_ar": "تسكين الألم الحاد"
+},
+{
+"no": "3.5",
+"en": "ANALGESIA – ACUTE (ISOPLANAR INTERFERENCE)",
+"ar": "تسكين الألم الحاد (تداخلي متساوي المستوى)",
+"group_ar": "تسكين الألم الحاد"
+},
+{
+"no": "4.1",
+"en": "ANALGESIA – CHRONIC (TENS)",
+"ar": "تسكين الألم المزمن (TENS)",
+"group_ar": "تسكين الألم المزمن"
+},
+{
+"no": "4.2",
+"en": "ANALGESIA – CHRONIC (TENS BURST)",
+"ar": "تسكين الألم المزمن (TENS متقطع (Burst))",
+"group_ar": "تسكين الألم المزمن"
+},
+{
+"no": "4.3",
+"en": "ANALGESIA – CHRONIC (4-POLE INTERFERENCE)",
+"ar": "تسكين الألم المزمن (تداخلي رباعي الأقطاب)",
+"group_ar": "تسكين الألم المزمن"
+},
+{
+"no": "4.4",
+"en": "ANALGESIA – CHRONIC (ISOPLANAR INTERFERENCE)",
+"ar": "تسكين الألم المزمن (تداخلي متساوي المستوى)",
+"group_ar": "تسكين الألم المزمن"
+},
+{
+"no": "5.1",
+"en": "ARTHRITIS (DIADYNAMIC CURRENT CP6 X LP6)",
+"ar": "التهاب المفاصل (تيار ثنائي الديناميكية CP6 X LP6)",
+"group_ar": "التهاب المفاصل"
+},
+{
+"no": "5.2",
+"en": "ARTHRITIS (ISOPLANAR INTERFERENCE)",
+"ar": "التهاب المفاصل (تداخلي متساوي المستوى)",
+"group_ar": "التهاب المفاصل"
+},
+{
+"no": "5.3",
+"en": "ARTHRITIS (TENS)",
+"ar": "التهاب المفاصل (TENS)",
+"group_ar": "التهاب المفاصل"
+},
+{
+"no": "6.1",
+"en": "ARTHROSIS – ACUTE (TENS BURST)",
+"ar": "خشونة المفاصل - حاد (TENS متقطع (Burst))",
+"group_ar": "خشونة المفاصل - حاد"
+},
+{
+"no": "6.2",
+"en": "ARTHROSIS – ACUTE (DIADYNAMIC CURRENT DF1 + LP5)",
+"ar": "خشونة المفاصل - حاد (تيار ثنائي الديناميكية DF1 + LP5)",
+"group_ar": "خشونة المفاصل - حاد"
+},
+{
+"no": "6.3",
+"en": "ARTHROSIS – ACUTE (ISOPLANAR INTERFERENCE)",
+"ar": "خشونة المفاصل - حاد (تداخلي متساوي المستوى)",
+"group_ar": "خشونة المفاصل - حاد"
+},
+{
+"no": "7.1",
+"en": "ARTHROSIS – CHRONIC (TENS BURST)",
+"ar": "خشونة المفاصل - مزمن (TENS متقطع (Burst))",
+"group_ar": "خشونة المفاصل - مزمن"
+},
+{
+"no": "7.2",
+"en": "ARTHROSIS – CHRONIC (DIADYNAMIC CURRENT LP6 X LP6)",
+"ar": "خشونة المفاصل - مزمن (تيار ثنائي الديناميكية LP6 X LP6)",
+"group_ar": "خشونة المفاصل - مزمن"
+},
+{
+"no": "7.3",
+"en": "ARTHROSIS – CHRONIC (ISOPLANAR INTERFERENCE)",
+"ar": "خشونة المفاصل - مزمن (تداخلي متساوي المستوى)",
+"group_ar": "خشونة المفاصل - مزمن"
+},
+{
+"no": "8.1",
+"en": "BECHTEREW´S DISEASE (PULSED TRÄBERT CURRENT)",
+"ar": "التهاب الفقار اللاصق (بختريف) (تيار ترابرت نبضي)",
+"group_ar": "التهاب الفقار اللاصق (بختريف)"
+},
+{
+"no": "8.2",
+"en": "BECHTEREW´S DISEASE (TRÄBERT CURRENT)",
+"ar": "التهاب الفقار اللاصق (بختريف) (تيار ترابرت)",
+"group_ar": "التهاب الفقار اللاصق (بختريف)"
+},
+{
+"no": "9.1",
+"en": "BURSITIS (TENS)",
+"ar": "التهاب الجراب (TENS)",
+"group_ar": "التهاب الجراب"
+},
+{
+"no": "9.2",
+"en": "BURSITIS (ISOPLANAR INTERFERENCE)",
+"ar": "التهاب الجراب (تداخلي متساوي المستوى)",
+"group_ar": "التهاب الجراب"
+},
+{
+"no": "9.3",
+"en": "BURSITIS (GALVANIZATION)",
+"ar": "التهاب الجراب (تيار غلفاني)",
+"group_ar": "التهاب الجراب"
+},
+{
+"no": "10.1",
+"en": "CERVICALGIA (TENS)",
+"ar": "ألم الرقبة (TENS)",
+"group_ar": "ألم الرقبة"
+},
+{
+"no": "10.2",
+"en": "CERVICALGIA (TRÄBERT CURRENT)",
+"ar": "ألم الرقبة (تيار ترابرت)",
+"group_ar": "ألم الرقبة"
+},
+{
+"no": "11.1",
+"en": "CIRCULATION AND TROPHIC IMPROVEMENT (DIADYNAMIC CURRENT CP6 X CP6)",
+"ar": "تحسين الدورة الدموية والتغذية النسيجية (تيار ثنائي الديناميكية CP6 X CP6)",
+"group_ar": "تحسين الدورة الدموية والتغذية النسيجية"
+},
+{
+"no": "11.2",
+"en": "CIRCULATION AND TROPHIC IMPROVEMENT (GALVANIZATION)",
+"ar": "تحسين الدورة الدموية والتغذية النسيجية (تيار غلفاني)",
+"group_ar": "تحسين الدورة الدموية والتغذية النسيجية"
+},
+{
+"no": "12.1",
+"en": "CONTUSION – ACUTE (DIADYNAMIC CURRENT DF1 + CP5 X LP6)",
+"ar": "الكدمة - حاد (تيار ثنائي الديناميكية DF1 + CP5 X LP6)",
+"group_ar": "الكدمة - حاد"
+},
+{
+"no": "12.2",
+"en": "CONTUSION – ACUTE (TENS)",
+"ar": "الكدمة - حاد (TENS)",
+"group_ar": "الكدمة - حاد"
+},
+{
+"no": "12.3",
+"en": "CONTUSION – ACUTE (GALVANIZATION)",
+"ar": "الكدمة - حاد (تيار غلفاني)",
+"group_ar": "الكدمة - حاد"
+},
+{
+"no": "13.1",
+"en": "CONTUSION – SUBACUTE (4-POLE INTERFERENCE)",
+"ar": "الكدمة - تحت الحاد (تداخلي رباعي الأقطاب)",
+"group_ar": "الكدمة - تحت الحاد"
+},
+{
+"no": "13.2",
+"en": "CONTUSION – SUBACUTE (2-POLE INTERFERENCE)",
+"ar": "الكدمة - تحت الحاد (تداخلي ثنائي الأقطاب)",
+"group_ar": "الكدمة - تحت الحاد"
+},
+{
+"no": "13.3",
+"en": "CONTUSION – SUBACUTE (ISOPLANAR INTERFERENCE)",
+"ar": "الكدمة - تحت الحاد (تداخلي متساوي المستوى)",
+"group_ar": "الكدمة - تحت الحاد"
+},
+{
+"no": "13.4",
+"en": "CONTUSION – SUBACUTE (DIADYNAMIC CURRENT CP)",
+"ar": "الكدمة - تحت الحاد (تيار ثنائي الديناميكية CP)",
+"group_ar": "الكدمة - تحت الحاد"
+},
+{
+"no": "14.1",
+"en": "DISTORSION – ACUTE (DIADYNAMIC CURRENT DF1 + CP5 X LP6)",
+"ar": "التواء المفصل - حاد (تيار ثنائي الديناميكية DF1 + CP5 X LP6)",
+"group_ar": "التواء المفصل - حاد"
+},
+{
+"no": "14.2",
+"en": "DISTORSION – ACUTE (TENS)",
+"ar": "التواء المفصل - حاد (TENS)",
+"group_ar": "التواء المفصل - حاد"
+},
+{
+"no": "14.3",
+"en": "DISTORSION – ACUTE (GALVANIZATION)",
+"ar": "التواء المفصل - حاد (تيار غلفاني)",
+"group_ar": "التواء المفصل - حاد"
+},
+{
+"no": "15.1",
+"en": "DISTORSION – SUBACUTE (2-POLE INTERFERENCE)",
+"ar": "التواء المفصل - تحت الحاد (تداخلي ثنائي الأقطاب)",
+"group_ar": "التواء المفصل - تحت الحاد"
+},
+{
+"no": "15.2",
+"en": "DISTORSION – SUBACUTE (4-POLE INTERFERENCE)",
+"ar": "التواء المفصل - تحت الحاد (تداخلي رباعي الأقطاب)",
+"group_ar": "التواء المفصل - تحت الحاد"
+},
+{
+"no": "15.3",
+"en": "DISTORSION – SUBACUTE (ISOPLANAR INTERFERENCE)",
+"ar": "التواء المفصل - تحت الحاد (تداخلي متساوي المستوى)",
+"group_ar": "التواء المفصل - تحت الحاد"
+},
+{
+"no": "15.4",
+"en": "DISTORSION – SUBACUTE (DIADYNAMIC CURRENT CP)",
+"ar": "التواء المفصل - تحت الحاد (تيار ثنائي الديناميكية CP)",
+"group_ar": "التواء المفصل - تحت الحاد"
+},
+{
+"no": "16.1",
+"en": "DUPUYTREN'S CONTRACTURE (GALVANIZATION)",
+"ar": "تقفع دوبويتران (تيار غلفاني)",
+"group_ar": "تقفع دوبويتران"
+},
+{
+"no": "17.1",
+"en": "DYSMENORRHEA - MYOFASCIAL ETIOLOGY (TENS)",
+"ar": "عسر الطمث بمنشأ عضلي لفافي (TENS)",
+"group_ar": "عسر الطمث بمنشأ عضلي لفافي"
+},
+{
+"no": "18.1",
+"en": "EPICONDYLITIS (2-POLE INTERFERENCE)",
+"ar": "التهاب اللقيمة (مرفق التنس/الغولف) (تداخلي ثنائي الأقطاب)",
+"group_ar": "التهاب اللقيمة (مرفق التنس/الغولف)"
+},
+{
+"no": "18.2",
+"en": "EPICONDYLITIS (TENS)",
+"ar": "التهاب اللقيمة (مرفق التنس/الغولف) (TENS)",
+"group_ar": "التهاب اللقيمة (مرفق التنس/الغولف)"
+},
+{
+"no": "19.1",
+"en": "FIBROMYALGIA (TENS)",
+"ar": "الألم العضلي الليفي (TENS)",
+"group_ar": "الألم العضلي الليفي"
+},
+{
+"no": "19.2",
+"en": "FIBROMYALGIA (ISOPLANAR INTERFERENCE)",
+"ar": "الألم العضلي الليفي (تداخلي متساوي المستوى)",
+"group_ar": "الألم العضلي الليفي"
+},
+{
+"no": "20.1",
+"en": "FROZEN SHOULDER (TENS BURST)",
+"ar": "الكتف المتجمدة (TENS متقطع (Burst))",
+"group_ar": "الكتف المتجمدة"
+},
+{
+"no": "20.2",
+"en": "FROZEN SHOULDER (4-POLE INTERFERENCE)",
+"ar": "الكتف المتجمدة (تداخلي رباعي الأقطاب)",
+"group_ar": "الكتف المتجمدة"
+},
+{
+"no": "20.3",
+"en": "FROZEN SHOULDER (ISOPLANAR INTERFERENCE)",
+"ar": "الكتف المتجمدة (تداخلي متساوي المستوى)",
+"group_ar": "الكتف المتجمدة"
+},
+{
+"no": "21.1",
+"en": "HAEMARTHROSIS (ISOPLANAR INTERFERENCE)",
+"ar": "تدمّي المفصل (تداخلي متساوي المستوى)",
+"group_ar": "تدمّي المفصل"
+},
+{
+"no": "21.2",
+"en": "HAEMARTHROSIS (4-POLE INTERFERENCE)",
+"ar": "تدمّي المفصل (تداخلي رباعي الأقطاب)",
+"group_ar": "تدمّي المفصل"
+},
+{
+"no": "21.3",
+"en": "HAEMARTHROSIS (2-POLE INTERFERENCE)",
+"ar": "تدمّي المفصل (تداخلي ثنائي الأقطاب)",
+"group_ar": "تدمّي المفصل"
+},
+{
+"no": "22.1",
+"en": "HAEMATOMA (DIADYNAMIC CURRENT DF1 + CP5 X LP6)",
+"ar": "الورم الدموي (تيار ثنائي الديناميكية DF1 + CP5 X LP6)",
+"group_ar": "الورم الدموي"
+},
+{
+"no": "22.2",
+"en": "HAEMATOMA (TENS)",
+"ar": "الورم الدموي (TENS)",
+"group_ar": "الورم الدموي"
+},
+{
+"no": "22.3",
+"en": "HAEMATOMA (GALVANIZATION)",
+"ar": "الورم الدموي (تيار غلفاني)",
+"group_ar": "الورم الدموي"
+},
+{
+"no": "23.1",
+"en": "HEEL SPUR (2-POLE INTERFERENCE)",
+"ar": "شوكة الكعب (تداخلي ثنائي الأقطاب)",
+"group_ar": "شوكة الكعب"
+},
+{
+"no": "23.2",
+"en": "HEEL SPUR (TENS)",
+"ar": "شوكة الكعب (TENS)",
+"group_ar": "شوكة الكعب"
+},
+{
+"no": "24.1",
+"en": "HYPERALGESIC ZONE (TENS)",
+"ar": "منطقة فرط التحسس للألم (TENS)",
+"group_ar": "منطقة فرط التحسس للألم"
+},
+{
+"no": "24.2",
+"en": "HYPERALGESIC ZONE (DIADYNAMIC CURRENT LP)",
+"ar": "منطقة فرط التحسس للألم (تيار ثنائي الديناميكية LP)",
+"group_ar": "منطقة فرط التحسس للألم"
+},
+{
+"no": "25.1",
+"en": "IMPINGEMENT SYNDROME (DIPOLE VECTOR FIELD)",
+"ar": "متلازمة الانحشار (الكتف) (حقل متجه ثنائي القطب)",
+"group_ar": "متلازمة الانحشار (الكتف)"
+},
+{
+"no": "25.2",
+"en": "IMPINGEMENT SYNDROME (TENS)",
+"ar": "متلازمة الانحشار (الكتف) (TENS)",
+"group_ar": "متلازمة الانحشار (الكتف)"
+},
+{
+"no": "26.1",
+"en": "INCONTINENCE – STRESS (TENS SEQUENCE)",
+"ar": "سلس البول الإجهادي (تسلسل TENS)",
+"group_ar": "سلس البول الإجهادي"
+},
+{
+"no": "27.1",
+"en": "INCONTINENCE – URINARY (TENS)",
+"ar": "سلس البول (TENS)",
+"group_ar": "سلس البول"
+},
+{
+"no": "27.2",
+"en": "INCONTINENCE – URINARY (TENS SEQUENCE)",
+"ar": "سلس البول (تسلسل TENS)",
+"group_ar": "سلس البول"
+},
+{
+"no": "27.3",
+"en": "INCONTINENCE – URINARY (4-POLE INTERFERENCE)",
+"ar": "سلس البول (تداخلي رباعي الأقطاب)",
+"group_ar": "سلس البول"
+},
+{
+"no": "28.1",
+"en": "ISCHEMIA - LOWER LIMBS (ISOPLANAR INTERFERENCE)",
+"ar": "نقص التروية - الأطراف السفلية (تداخلي متساوي المستوى)",
+"group_ar": "نقص التروية - الأطراف السفلية"
+},
+{
+"no": "28.2",
+"en": "ISCHEMIA - LOWER LIMBS (DIADYNAMIC CURRENT CP)",
+"ar": "نقص التروية - الأطراف السفلية (تيار ثنائي الديناميكية CP)",
+"group_ar": "نقص التروية - الأطراف السفلية"
+},
+{
+"no": "28.3",
+"en": "ISCHEMIA - LOWER LIMBS (DIADYNAMIC CURRENT CP6 X CP6)",
+"ar": "نقص التروية - الأطراف السفلية (تيار ثنائي الديناميكية CP6 X CP6)",
+"group_ar": "نقص التروية - الأطراف السفلية"
+},
+{
+"no": "29.1",
+"en": "LUMBALGIA (TENS)",
+"ar": "ألم أسفل الظهر (القطني) (TENS)",
+"group_ar": "ألم أسفل الظهر (القطني)"
+},
+{
+"no": "29.2",
+"en": "LUMBALGIA (TRÄBERT CURRENT)",
+"ar": "ألم أسفل الظهر (القطني) (تيار ترابرت)",
+"group_ar": "ألم أسفل الظهر (القطني)"
+},
+{
+"no": "29.3",
+"en": "LUMBALGIA (ISOPLANAR INTERFERENCE)",
+"ar": "ألم أسفل الظهر (القطني) (تداخلي متساوي المستوى)",
+"group_ar": "ألم أسفل الظهر (القطني)"
+},
+{
+"no": "30.1",
+"en": "MUSCLE RELAXATION (EPIR)",
+"ar": "إرخاء العضلات (EPIR)",
+"group_ar": "إرخاء العضلات"
+},
+{
+"no": "30.2",
+"en": "MUSCLE RELAXATION (TENS SEQUENCE)",
+"ar": "إرخاء العضلات (تسلسل TENS)",
+"group_ar": "إرخاء العضلات"
+},
+{
+"no": "30.3",
+"en": "MUSCLE RELAXATION (2-POLE INTERFERENCE)",
+"ar": "إرخاء العضلات (تداخلي ثنائي الأقطاب)",
+"group_ar": "إرخاء العضلات"
+},
+{
+"no": "30.4",
+"en": "MUSCLE RELAXATION (TENS)",
+"ar": "إرخاء العضلات (TENS)",
+"group_ar": "إرخاء العضلات"
+},
+{
+"no": "31.1",
+"en": "MUSCLE STRAIN (DIADYNAMIC CURRENT DF1 + CP5 X LP6)",
+"ar": "الشد/الإجهاد العضلي (تيار ثنائي الديناميكية DF1 + CP5 X LP6)",
+"group_ar": "الشد/الإجهاد العضلي"
+},
+{
+"no": "31.2",
+"en": "MUSCLE STRAIN (TENS)",
+"ar": "الشد/الإجهاد العضلي (TENS)",
+"group_ar": "الشد/الإجهاد العضلي"
+},
+{
+"no": "31.3",
+"en": "MUSCLE STRAIN (GALVANIZATION)",
+"ar": "الشد/الإجهاد العضلي (تيار غلفاني)",
+"group_ar": "الشد/الإجهاد العضلي"
+},
+{
+"no": "32.1",
+"en": "MUSCLE STRENGTHENING (TENS SEQUENCE)",
+"ar": "تقوية العضلات (تسلسل TENS)",
+"group_ar": "تقوية العضلات"
+},
+{
+"no": "32.2",
+"en": "MUSCLE STRENGTHENING (KOTZ CURRENT)",
+"ar": "تقوية العضلات (تيار كوتز (روسي))",
+"group_ar": "تقوية العضلات"
+},
+{
+"no": "32.3",
+"en": "MUSCLE STRENGTHENING (HVT)",
+"ar": "تقوية العضلات (جهد عالٍ (HVT))",
+"group_ar": "تقوية العضلات"
+},
+{
+"no": "32.4",
+"en": "MUSCLE STRENGTHENING (TENS)",
+"ar": "تقوية العضلات (TENS)",
+"group_ar": "تقوية العضلات"
+},
+{
+"no": "32.5",
+"en": "MUSCLE STRENGTHENING (RUSSIAN STIMULATION)",
+"ar": "تقوية العضلات (تحفيز روسي)",
+"group_ar": "تقوية العضلات"
+},
+{
+"no": "33.1",
+"en": "NEURALGIA – OCCIPITAL (HVT)",
+"ar": "ألم العصب القذالي (جهد عالٍ (HVT))",
+"group_ar": "ألم العصب القذالي"
+},
+{
+"no": "33.2",
+"en": "NEURALGIA – OCCIPITAL (TENS)",
+"ar": "ألم العصب القذالي (TENS)",
+"group_ar": "ألم العصب القذالي"
+},
+{
+"no": "34.1",
+"en": "NEURALGIA – POSTHERPETIC (TENS BURST)",
+"ar": "ألم العصب التالي للهربس (TENS متقطع (Burst))",
+"group_ar": "ألم العصب التالي للهربس"
+},
+{
+"no": "34.2",
+"en": "NEURALGIA – POSTHERPETIC (TENS - ACUPUNCTURE)",
+"ar": "ألم العصب التالي للهربس (TENS - نمط الوخز)",
+"group_ar": "ألم العصب التالي للهربس"
+},
+{
+"no": "34.3",
+"en": "NEURALGIA – POSTHERPETIC (DIADYNAMIC CURRENT DF1 + LP5)",
+"ar": "ألم العصب التالي للهربس (تيار ثنائي الديناميكية DF1 + LP5)",
+"group_ar": "ألم العصب التالي للهربس"
+},
+{
+"no": "35.1",
+"en": "NEURALGIA (GALVANIZATION)",
+"ar": "الألم العصبي (تيار غلفاني)",
+"group_ar": "الألم العصبي"
+},
+{
+"no": "36.1",
+"en": "NEUROPATHY – HYPESTHESIA (GALVANIZATION)",
+"ar": "اعتلال الأعصاب - نقص الحس (تيار غلفاني)",
+"group_ar": "اعتلال الأعصاب - نقص الحس"
+},
+{
+"no": "37.1",
+"en": "NEUROPATHY - PARESTHESIA AND DYSESTHESIA (GALVANIZATION)",
+"ar": "اعتلال الأعصاب - تنميل وخلل حس (تيار غلفاني)",
+"group_ar": "اعتلال الأعصاب - تنميل وخلل حس"
+},
+{
+"no": "37.2",
+"en": "NEUROPATHY - PARESTHESIA AND DYSESTHESIA (TENS)",
+"ar": "اعتلال الأعصاب - تنميل وخلل حس (TENS)",
+"group_ar": "اعتلال الأعصاب - تنميل وخلل حس"
+},
+{
+"no": "37.3",
+"en": "NEUROPATHY - PARESTHESIA AND DYSESTHESIA (TENS - ACUPUNCTURE)",
+"ar": "اعتلال الأعصاب - تنميل وخلل حس (TENS - نمط الوخز)",
+"group_ar": "اعتلال الأعصاب - تنميل وخلل حس"
+},
+{
+"no": "38.1",
+"en": "OBSTIPATION – ATONIC (4-POLE INTERFERENCE)",
+"ar": "الإمساك الخامل (الوني) (تداخلي رباعي الأقطاب)",
+"group_ar": "الإمساك الخامل (الوني)"
+},
+{
+"no": "38.2",
+"en": "OBSTIPATION – ATONIC (ISOPLANAR INTERFERENCE)",
+"ar": "الإمساك الخامل (الوني) (تداخلي متساوي المستوى)",
+"group_ar": "الإمساك الخامل (الوني)"
+},
+{
+"no": "39.1",
+"en": "OBSTIPATION – SPASTIC (4-POLE INTERFERENCE)",
+"ar": "الإمساك التشنجي (تداخلي رباعي الأقطاب)",
+"group_ar": "الإمساك التشنجي"
+},
+{
+"no": "39.2",
+"en": "OBSTIPATION – SPASTIC (ISOPLANAR INTERFERENCE)",
+"ar": "الإمساك التشنجي (تداخلي متساوي المستوى)",
+"group_ar": "الإمساك التشنجي"
+},
+{
+"no": "40.1",
+"en": "OSGOOD-SCHLATTER DISEASE (DIADYNAMIC CURRENT DF1 + CP5 X LP6)",
+"ar": "داء أوسغود-شلاتر (تيار ثنائي الديناميكية DF1 + CP5 X LP6)",
+"group_ar": "داء أوسغود-شلاتر"
+},
+{
+"no": "41.1",
+"en": "SCOLIOSIS (TENS)",
+"ar": "الجنف (TENS)",
+"group_ar": "الجنف"
+},
+{
+"no": "42.1",
+"en": "SEQUENCES (DF 1 + LP 5 X LP 6)",
+"ar": "تسلسلات التيار الثنائي الديناميكية (DF 1 + LP 5 X LP 6)",
+"group_ar": "تسلسلات التيار الثنائي الديناميكية"
+},
+{
+"no": "42.2",
+"en": "SEQUENCES (DF 1 + CP 5 X LP 6)",
+"ar": "تسلسلات التيار الثنائي الديناميكية (DF 1 + CP 5 X LP 6)",
+"group_ar": "تسلسلات التيار الثنائي الديناميكية"
+},
+{
+"no": "42.3",
+"en": "SEQUENCES (DF 1 + CP 5 X CP 6)",
+"ar": "تسلسلات التيار الثنائي الديناميكية (DF 1 + CP 5 X CP 6)",
+"group_ar": "تسلسلات التيار الثنائي الديناميكية"
+},
+{
+"no": "42.4",
+"en": "SEQUENCES (DF 1 + CP 2 + LP 3)",
+"ar": "تسلسلات التيار الثنائي الديناميكية (DF 1 + CP 2 + LP 3)",
+"group_ar": "تسلسلات التيار الثنائي الديناميكية"
+},
+{
+"no": "42.5",
+"en": "SEQUENCES (DF 1 + CP 5)",
+"ar": "تسلسلات التيار الثنائي الديناميكية (DF 1 + CP 5)",
+"group_ar": "تسلسلات التيار الثنائي الديناميكية"
+},
+{
+"no": "42.6",
+"en": "SEQUENCES (DF 1 + LP 5)",
+"ar": "تسلسلات التيار الثنائي الديناميكية (DF 1 + LP 5)",
+"group_ar": "تسلسلات التيار الثنائي الديناميكية"
+},
+{
+"no": "43.1",
+"en": "SPASTICITY REDUCTION (SPASTIC STIMULATION HUFSCHMIDT)",
+"ar": "تقليل التشنج العضلي (الشناج) (تحفيز هوفشميدت للشناج)",
+"group_ar": "تقليل التشنج العضلي (الشناج)"
+},
+{
+"no": "43.2",
+"en": "SPASTICITY REDUCTION (SPASTIC STIMULATION JANTSCH)",
+"ar": "تقليل التشنج العضلي (الشناج) (تحفيز يانتش للشناج)",
+"group_ar": "تقليل التشنج العضلي (الشناج)"
+},
+{
+"no": "44.1",
+"en": "STIMULATION OF DENERVATED MUSCLE (STIMULATION PULSES)",
+"ar": "تحفيز العضلات منزوعة التعصيب (نبضات تحفيز)",
+"group_ar": "تحفيز العضلات منزوعة التعصيب"
+},
+{
+"no": "45.1",
+"en": "SWELLING REDUCTION (MID-FREQUENCY SURGES)",
+"ar": "تخفيف التورم (موجات متوسطة التردد)",
+"group_ar": "تخفيف التورم"
+},
+{
+"no": "45.2",
+"en": "SWELLING REDUCTION (2-POLE INTERFERENCE)",
+"ar": "تخفيف التورم (تداخلي ثنائي الأقطاب)",
+"group_ar": "تخفيف التورم"
+},
+{
+"no": "45.3",
+"en": "SWELLING REDUCTION (DIADYNAMIC CURRENT CP6 X CP6)",
+"ar": "تخفيف التورم (تيار ثنائي الديناميكية CP6 X CP6)",
+"group_ar": "تخفيف التورم"
+},
+{
+"no": "45.4",
+"en": "SWELLING REDUCTION (2-POLE INTERFERENCE)",
+"ar": "تخفيف التورم (تداخلي ثنائي الأقطاب)",
+"group_ar": "تخفيف التورم"
+},
+{
+"no": "46.1",
+"en": "TENDOVAGINITIS (2-POLE INTERFERENCE)",
+"ar": "التهاب غمد الوتر (تداخلي ثنائي الأقطاب)",
+"group_ar": "التهاب غمد الوتر"
+},
+{
+"no": "46.2",
+"en": "TENDOVAGINITIS (DIADYNAMIC CURRENT DF1 + CP5 X LP6)",
+"ar": "التهاب غمد الوتر (تيار ثنائي الديناميكية DF1 + CP5 X LP6)",
+"group_ar": "التهاب غمد الوتر"
+},
+{
+"no": "47.1",
+"en": "THORACALGIA (TENS)",
+"ar": "ألم القفص الصدري (TENS)",
+"group_ar": "ألم القفص الصدري"
+},
+{
+"no": "47.2",
+"en": "THORACALGIA (TRÄBERT CURRENT)",
+"ar": "ألم القفص الصدري (تيار ترابرت)",
+"group_ar": "ألم القفص الصدري"
+},
+{
+"no": "47.3",
+"en": "THORACALGIA (ISOPLANAR INTERFERENCE)",
+"ar": "ألم القفص الصدري (تداخلي متساوي المستوى)",
+"group_ar": "ألم القفص الصدري"
+},
+{
+"no": "48.1",
+"en": "TRIGGER POINTS (TENS)",
+"ar": "نقاط الزناد (TENS)",
+"group_ar": "نقاط الزناد"
+},
+{
+"no": "48.2",
+"en": "TRIGGER POINTS (DIADYNAMIC CURRENT LP)",
+"ar": "نقاط الزناد (تيار ثنائي الديناميكية LP)",
+"group_ar": "نقاط الزناد"
+},
+{
+"no": "49.1",
+"en": "URINARY BLADDER DYSFUNCTION – ATONIC (4-POLE INTERFERENCE)",
+"ar": "خلل المثانة - خامل (تداخلي رباعي الأقطاب)",
+"group_ar": "خلل المثانة - خامل"
+},
+{
+"no": "49.2",
+"en": "URINARY BLADDER DYSFUNCTION – ATONIC (ISOPLANAR INTERFERENCE)",
+"ar": "خلل المثانة - خامل (تداخلي متساوي المستوى)",
+"group_ar": "خلل المثانة - خامل"
+},
+{
+"no": "50.1",
+"en": "VASCULITIS - BÜRGER’S DISEASE (GALVANIZATION)",
+"ar": "التهاب الأوعية - داء بورغر (تيار غلفاني)",
+"group_ar": "التهاب الأوعية - داء بورغر"
+},
+{
+"no": "51.1",
+"en": "VASONEUROSIS - ACROCYANOSIS AND RAYNAUD’S DISEASE (ISOPLANAR INTERFERENCE)",
+"ar": "العصاب الوعائي - زرقة الأطراف وداء رينو (تداخلي متساوي المستوى)",
+"group_ar": "العصاب الوعائي - زرقة الأطراف وداء رينو"
+},
+{
+"no": "51.2",
+"en": "VASONEUROSIS - ACROCYANOSIS AND RAYNAUD’S DISEASE (2-POLE INTERFERENCE)",
+"ar": "العصاب الوعائي - زرقة الأطراف وداء رينو (تداخلي ثنائي الأقطاب)",
+"group_ar": "العصاب الوعائي - زرقة الأطراف وداء رينو"
+},
+{
+"no": "51.3",
+"en": "VASONEUROSIS - ACROCYANOSIS AND RAYNAUD’S DISEASE (GALVANIZATION)",
+"ar": "العصاب الوعائي - زرقة الأطراف وداء رينو (تيار غلفاني)",
+"group_ar": "العصاب الوعائي - زرقة الأطراف وداء رينو"
+},
+{
+"no": "52.1",
+"en": "WELLNESS (MUSCLE STRAIN)",
+"ar": "العافية - إجهاد العضلات",
+"group_ar": "العافية (Wellness)"
+},
+{
+"no": "52.2",
+"en": "WELLNESS (CIRCULATION IMPROVEMENT)",
+"ar": "العافية - تحسين الدورة الدموية",
+"group_ar": "العافية (Wellness)"
+},
+{
+"no": "52.3",
+"en": "WELLNESS (MUSCLE STRENGTHENING)",
+"ar": "العافية - تقوية العضلات",
+"group_ar": "العافية (Wellness)"
+},
+{
+"no": "52.4",
+"en": "WELLNESS (MUSCLE FATIGUE 2)",
+"ar": "العافية - إرهاق العضلات 2",
+"group_ar": "العافية (Wellness)"
+},
+{
+"no": "52.5",
+"en": "WELLNESS (MUSCLE FATIGUE)",
+"ar": "العافية - إرهاق العضلات",
+"group_ar": "العافية (Wellness)"
+},
+{
+"no": "52.6",
+"en": "WELLNESS (ENTHESOPATHY)",
+"ar": "العافية - اعتلال الارتكاز الوتري",
+"group_ar": "العافية (Wellness)"
+},
+{
+"no": "52.7",
+"en": "WELLNESS (SWELLING REDUCTION)",
+"ar": "العافية - تخفيف التورم",
+"group_ar": "العافية (Wellness)"
+},
+{
+"no": "52.8",
+"en": "WELLNESS (MYALGIA)",
+"ar": "العافية - ألم عضلي",
+"group_ar": "العافية (Wellness)"
+},
+{
+"no": "52.9",
+"en": "WELLNESS (MUSCLE RELAXATION)",
+"ar": "العافية - إرخاء العضلات",
+"group_ar": "العافية (Wellness)"
+},
+{
+"no": "52.10",
+"en": "WELLNESS (HAEMATOMA)",
+"ar": "العافية - ورم دموي",
+"group_ar": "العافية (Wellness)"
+},
+{
+"no": "52.11",
+"en": "WELLNESS (BURSITIS)",
+"ar": "العافية - التهاب الجراب",
+"group_ar": "العافية (Wellness)"
+}
+]

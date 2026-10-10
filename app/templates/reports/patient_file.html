@@ -1,0 +1,37 @@
+{% extends "reports/base.html" %}
+{% block body %}
+{% set hq = h.qn.by_code %}{% set ha = h.answers %}{% set lq = lq.by_code %}
+<p class="small">رقم التسلسل: {{ p.serial_no or '—' }} · الرف: {{ p.archive_shelf or '—' }} · الخزانة/الدرج: {{ p.archive_cabinet or '—' }} · تاريخ التقييم: {{ assessor.created_at|ndate if assessor else '—' }}</p>
+<h2>الشكوى الرئيسية والتاريخ الصحي</h2>
+<table class="qa"><tbody>
+  <tr><td>الشكوى الرئيسية</td><td>{{ display_value(lq.LB_PRESENTING_PROBLEM, lumbar.get('LB_PRESENTING_PROBLEM')) if lumbar.get('LB_PRESENTING_PROBLEM') else display_value(hq.HX_MAIN_PROBLEM, ha.get('HX_MAIN_PROBLEM')) }}</td></tr>
+  <tr><td>الأمراض المزمنة</td><td>{% set cs = [] %}{% for c, q in hq.items() if c.startswith('HX_COND_') and ha.get(c) and ha[c].value == 'YES' %}{{ q.text }}{% if not loop.last %}، {% endif %}{% else %}—{% endfor %}</td></tr>
+  <tr><td>الأدوية</td><td>{% for e in h.entries if e.entry_type == 'MEDICATION' %}{{ e.data.name }} {{ e.data.dose or '' }}{% if not loop.last %}، {% endif %}{% endfor %} {{ display_value(hq.HX_MED_CLASSES, ha.get('HX_MED_CLASSES')) }}</td></tr>
+  <tr><td>العمليات السابقة</td><td>{% for e in h.entries if e.entry_type == 'SURGERY' %}{{ e.data.procedure }} ({{ e.data.year or '—' }}){% if not loop.last %}، {% endif %}{% else %}{{ display_value(hq.HX_SURGERY_ANY, ha.get('HX_SURGERY_ANY')) }}{% endfor %}</td></tr>
+  <tr><td>القصة المرضية</td><td>{{ lumbar.LB_HISTORY_NARRATIVE.value if lumbar.get('LB_HISTORY_NARRATIVE') and lumbar.LB_HISTORY_NARRATIVE.status == 'ANSWERED' else '—' }}</td></tr>
+</tbody></table>
+<h2>الأعراض الحالية ومقياس الألم</h2>
+<table class="qa"><tbody>
+  {% for c in ['LB_PAIN_NOW','LB_PAIN_CONTEXT','LB_PATTERN','LB_DURATION_CATEGORY','LB_DISTRIBUTION','LB_AGG','LB_NEURO_SYMPTOMS'] %}<tr><td>{{ lq[c].text }}</td><td>{{ display_value(lq[c], lumbar.get(c)) }}</td></tr>{% endfor %}
+</tbody></table>
+<h2>التقييم السريري — القوة العضلية والقيود الحالية</h2>
+<table><thead><tr><th>الاختبار</th><th>الجهة</th><th>النتيجة</th></tr></thead><tbody>
+{% for r in exam %}{% set base = r.test_code.split(':')[0] %}<tr><td>{{ tests[base].name_ar if base in tests else base }}{% if ':' in r.test_code %} — {{ r.test_code.split(':')[1] }}{% endif %}</td><td>{{ SIDE_LABELS[r.side] }}</td><td>{{ RESULT_LABELS[r.result] }} {% if r.value_num is not none %}<span class="num">{{ r.value_num }}</span>{% endif %} {{ SENSORY_LABELS.get(r.value_text) if base == 'NEURO_DERMATOMES' else (REFLEX_LABELS.get(r.value_text) if base == 'NEURO_REFLEXES' else (r.value_text or '')) }}{% if r.not_done_reason %} ({{ r.not_done_reason }}){% endif %}</td></tr>
+{% else %}<tr><td colspan="3">—</td></tr>{% endfor %}</tbody></table>
+<table class="qa"><tbody><tr><td>القيود / الصعوبات الحالية</td><td>{{ display_value(lq.LB_ACTIVITY_LIMITS, lumbar.get('LB_ACTIVITY_LIMITS')) }}</td></tr>
+  <tr><td>الانطباع السريري</td><td>{{ display_value(lq.LB_CLINICAL_IMPRESSION, lumbar.get('LB_CLINICAL_IMPRESSION')) }}</td></tr>
+  <tr><td>ملاحظات عامة</td><td>{{ display_value(lq.LB_GENERAL_NOTES, lumbar.get('LB_GENERAL_NOTES')) }}</td></tr></tbody></table>
+<div class="sign"><div>اسم المعالج: {{ assessor.full_name if assessor else '—' }}</div><div>التاريخ: {{ assessor.created_at|ndate if assessor else '—' }}</div></div>
+
+<div class="page-break"></div>
+<h2>الخطة العلاجية ومتابعة الجلسات</h2>
+<p class="small">تاريخ بدء العلاج: {{ sessions[0].session_date|ndate if sessions else '—' }} · {% if approved %}الخطة المعتمدة الإصدار <span class="num">{{ approved.version_no }}</span>{% else %}<span class="flag">لا توجد خطة معتمدة</span>{% endif %}</p>
+{% if approved %}<div class="box small">{{ approved.content.impression }}<br>{% for it in items %}• {{ CATEGORY_LABELS[it.category] }}: {{ it.title }} — {{ it.dosage or '' }}<br>{% endfor %}</div>{% endif %}
+<table><thead><tr><th>الجلسة</th><th>التاريخ</th><th>الملاحظات / الاستجابة</th><th>المعالج</th></tr></thead><tbody>
+{% for i in range(1, ([22, sessions|length]|max) + 1) %}{% set s = sessions|selectattr('session_no','equalto',i)|first %}
+<tr><td class="num">{{ i }}</td><td class="num">{{ s.session_date|ndate if s else '' }}</td><td class="small">{% if s %}{{ s.response or '' }}{% if s.adverse_event %} <span class="flag">حدث غير مرغوب</span>{% endif %}{% endif %}</td><td class="small">{{ s.therapist_name if s else '' }}</td></tr>{% endfor %}
+</tbody></table>
+{% for m, lbl in [('S6','التقييم بعد الجلسة السادسة'),('S12','التقييم بعد الجلسة الثانية عشرة')] %}{% set rv = reviews|selectattr('milestone','equalto',m)|first %}
+<div class="box"><b>{{ lbl }}:</b> {{ rv.summary if rv else '' }}</div>{% endfor %}
+<div class="box small muted">البيانات المالية (عدد الجلسات المتفق عليها، المبلغ، الدفعات الأربع، المتبقي) تُطبع من قسم المحاسبة وفق صلاحياته، ولا تظهر في التقارير السريرية.</div>
+{% endblock %}

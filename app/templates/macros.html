@@ -1,0 +1,96 @@
+{% macro safety_badge(status) -%}
+{% set cls = {'EMERGENCY':'danger','NEEDS_REVIEW':'warn','NO_FLAGS_REPORTED':'ok'}.get(status, '') %}
+<span class="badge {{ cls }}">{{ SAFETY_ICONS.get(status, '◌') }} {{ SAFETY_LABELS.get(status, status or 'لم يتأكد بعد') }}</span>
+{%- endmacro %}
+
+{% macro plan_badge(status) -%}
+{% set cls = {'APPROVED':'ok','CHANGES_REQUESTED':'warn','ESCALATED':'warn','ON_HOLD':'danger','SUBMITTED':'info'}.get(status, '') %}
+{% set ic = {'APPROVED':'✓','CHANGES_REQUESTED':'↩','ESCALATED':'⇧','ON_HOLD':'⏸','SUBMITTED':'⧗','DRAFT':'✎'}.get(status, '•') %}
+<span class="badge {{ cls }}">{{ ic }} {{ PLAN_STATUS.get(status, status) }}</span>
+{%- endmacro %}
+
+{% macro sev_badge(sev) -%}
+{% set cls = {'CRITICAL':'danger','HIGH':'danger','MEDIUM':'warn'}.get(sev, 'info') %}
+<span class="badge {{ cls }}">{{ SEVERITY_ICONS[sev] }} {{ SEVERITY_LABELS[sev] }}</span>
+{%- endmacro %}
+
+{% macro safety_box(s) -%}
+{% if s %}
+{% set cls = {'EMERGENCY':'danger','NEEDS_REVIEW':'warn','NO_FLAGS_REPORTED':'ok'}.get(s.status, '') %}
+<div class="notice {{ cls }}" role="status">
+  <h3>فرز السلامة: {{ SAFETY_ICONS.get(s.status) }} {{ SAFETY_LABELS[s.status] }}</h3>
+  {% if s.triggered %}<ul>{% for t in s.triggered %}<li><b>{{ t.message }}</b><br><span class="small">الإجراء: {{ t.action }} — بسبب: {% for b in t.because %}{{ b.text }}{% if not loop.last %}، {% endif %}{% endfor %}</span></li>{% endfor %}</ul>{% endif %}
+  {% if s.missing %}<p class="small">لم يُحسم بعد ({{ s.missing|length }}): {% for m in s.missing[:6] %}{{ m.text }} ({{ m.reason }}){% if not loop.last %}؛ {% endif %}{% endfor %}{% if s.missing|length > 6 %}…{% endif %}</p>{% endif %}
+  {% if s.flags %}<p class="small">تنبيهات احتياطية: {% for f in s.flags %}<span class="badge">{{ FLAG_LABELS.get(f, f) }}</span> {% endfor %}</p>{% endif %}
+  {% if s.status == 'NO_FLAGS_REPORTED' %}<p class="small">يسمح باستكمال التقييم، وليس تصريحاً آلياً بسلامة كل الإجراءات أو الأجهزة.</p>{% endif %}
+  <p class="small muted">قواعد: {{ s.rules_version }} · احتُسب: {{ s.computed_at|dt }}</p>
+</div>
+{% endif %}
+{%- endmacro %}
+
+{# One question card. a = current answer dict or None; prior = patient's pre-form answer for safety questions #}
+{% macro qcard(q, a, visible, prior=None) -%}
+{% set code = q.code %}
+{% set st = a.status if a else 'NOT_ASKED' %}
+{% set val = a.value if a and a.status == 'ANSWERED' else None %}
+<div class="q{% if q.safety %} safety{% endif %}" data-code="{{ code }}" data-type="{{ q.type }}" data-section="{{ q.section }}"
+     data-required="{{ '1' if q.required else '0' }}" data-base-id="{{ a.id if a else '' }}"
+     {% if q.show_if %}data-show-if="{{ q.show_if|j }}"{% endif %} {% if q.exclusive %}data-exclusive="{{ q.exclusive }}"{% endif %}
+     {% if code not in visible %}hidden{% endif %} role="group" aria-labelledby="ql-{{ code }}">
+  <div class="q-head">
+    <div class="q-title" id="ql-{{ code }}">{{ q.text }}{% if q.required %} <span class="muted small">(إلزامي)</span>{% endif %}
+      <span class="badge warn miss-flag" hidden>◌ ناقص</span></div>
+    {% if q.help %}<div class="q-meta">{{ q.help }}</div>{% endif %}
+    {% if a and a.status != 'NOT_ASKED' %}<div class="q-meta">آخر تسجيل: {{ a.recorded_by }} · {{ a.recorded_at|dt }}{% if a.source == 'PATIENT_REPORTED' %} · إجابة المريض (منقولة){% endif %}</div>{% endif %}
+  </div>
+  <div class="q-body">
+    {% if q.type == 'tri' %}
+      <div class="opts">
+        <label class="opt yes"><input type="radio" name="v:{{ code }}" value="YES" {% if val == 'YES' %}checked{% endif %}><span>نعم</span></label>
+        <label class="opt"><input type="radio" name="v:{{ code }}" value="NO" {% if val == 'NO' %}checked{% endif %}><span>لا</span></label>
+      </div>
+    {% elif q.type == 'choice' %}
+      <div class="opts">{% for o in q.options %}<label class="opt"><input type="radio" name="v:{{ code }}" value="{{ o.v }}" {% if val == o.v %}checked{% endif %}><span>{{ o.label }}</span></label>{% endfor %}</div>
+    {% elif q.type == 'multi' %}
+      <div class="opts">{% for o in q.options %}<label class="opt"><input type="checkbox" name="v:{{ code }}" value="{{ o.v }}" {% if val and o.v in val %}checked{% endif %}><span>{{ o.label }}</span></label>{% endfor %}</div>
+    {% elif q.type == 'scale010' %}
+      <div class="scale" role="radiogroup" aria-label="{{ q.text }}">{% for i in range(11) %}<label class="opt"><input type="radio" name="v:{{ code }}" value="{{ i }}" {% if val is not none and val == i %}checked{% endif %}><span class="num">{{ i }}</span></label>{% endfor %}</div>
+    {% elif q.type == 'longtext' %}
+      <textarea name="v:{{ code }}" aria-labelledby="ql-{{ code }}" maxlength="5000">{{ val or '' }}</textarea>
+    {% elif q.type == 'date' %}
+      <input type="date" name="v:{{ code }}" value="{{ val or '' }}" aria-labelledby="ql-{{ code }}">
+    {% elif q.type == 'number' %}
+      <div class="form-row"><input type="number" name="v:{{ code }}" value="{{ val if val is not none else '' }}" min="{{ q.min }}" max="{{ q.max }}" step="any" aria-labelledby="ql-{{ code }}"><span class="muted">{{ q.unit }}</span></div>
+    {% else %}
+      <input type="text" name="v:{{ code }}" value="{{ val or '' }}" maxlength="300" aria-labelledby="ql-{{ code }}">
+    {% endif %}
+    <div class="opts q-extra" aria-label="حالة أخرى للإجابة">
+      <label class="opt status"><input type="radio" name="s:{{ code }}" value="UNKNOWN" {% if st == 'UNKNOWN' %}checked{% endif %}><span>غير معروف</span></label>
+      <label class="opt status"><input type="radio" name="s:{{ code }}" value="NOT_ASKED" {% if a and st == 'NOT_ASKED' %}checked{% endif %}><span>لم يُسأل</span></label>
+      {% if q.allow_na %}<label class="opt status"><input type="radio" name="s:{{ code }}" value="NOT_APPLICABLE" {% if st == 'NOT_APPLICABLE' %}checked{% endif %}><span>لا ينطبق</span></label>{% endif %}
+    </div>
+    {% if prior %}<div class="prior {% if prior.value == 'YES' %}yes{% endif %}">إجابة المريض في الاستبيان المسبق: <b>{{ display_value(prior.q, prior.a) }}</b>{% if prior.value == 'YES' %} — يجب تأكيدها الآن{% endif %}</div>{% endif %}
+    <details class="q-extra" {% if a and a.note %}open{% endif %}><summary>ملاحظة{% if q.safety %} (إلزامية إن خالفت إجابة المريض المسبقة){% endif %}</summary>
+      <textarea name="n:{{ code }}" maxlength="1000" aria-label="ملاحظة: {{ q.text }}">{{ a.note if a and a.note else '' }}</textarea></details>
+  </div>
+</div>
+{%- endmacro %}
+
+{% macro savebar() -%}
+<div class="savebar" id="savebar" data-state="idle" role="status" aria-live="polite"><span class="dot">●</span><span class="txt">كل الإجابات محفوظة على الخادم</span><button type="button" hidden>إعادة المحاولة</button></div>
+<div class="notice warn" id="recover" hidden role="alert">توجد <b class="n">0</b> إجابة لم تُحفظ من جلسة سابقة على هذا الجهاز (انقطاع اتصال أو إغلاق المتصفح).
+  <div class="actions mt-s"><button type="button" class="primary" data-restore>استعادتها وحفظها</button><button type="button" data-discard>تجاهلها</button></div></div>
+{%- endmacro %}
+
+{% macro ep_tabs(ep, active) -%}
+<nav class="actions no-print mb-m" aria-label="أقسام الحلقة">
+  <a class="btn {% if active=='assessment' %}btn-primary{% endif %}" href="/episodes/{{ ep.id }}/assessment">التقييم</a>
+  <a class="btn {% if active=='plan' %}btn-primary{% endif %}" href="/episodes/{{ ep.id }}/plan">الخطة</a>
+  <a class="btn {% if active=='sessions' %}btn-primary{% endif %}" href="/episodes/{{ ep.id }}/sessions">الجلسات</a>
+  <a class="btn {% if active=='outcomes' %}btn-primary{% endif %}" href="/episodes/{{ ep.id }}/outcomes">النتائج والتطور</a>
+</nav>
+{%- endmacro %}
+
+{% macro patient_head(p, ep=None) -%}
+<div class="crumbs"><a href="/patients">المرضى</a> › <a href="/patients/{{ p.id }}">{{ p.full_name }}</a>{% if ep %} › {{ ep.title }}{% endif %}</div>
+{%- endmacro %}

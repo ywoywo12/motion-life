@@ -1,0 +1,54 @@
+{% extends "base.html" %}
+{% from "macros.html" import safety_badge, plan_badge, sev_badge %}
+{% block title %}لوحة العمل{% endblock %}
+{% block content %}
+<div class="page-head"><div><h1>لوحة العمل</h1><p class="sub">{{ data.role_name }} — {{ user.full_name }}</p></div>
+  {% if has_perm(user, 'patient.identity.write') %}<a class="btn btn-primary" href="/patients#new">＋ مريض جديد</a>{% endif %}</div>
+{% set c = data.cards %}
+
+{% if c.alerts %}
+<section class="card"><h2>⚠ تنبيهات مفتوحة ({{ c.alerts|length }})</h2>
+  <div class="table-wrap"><table><thead><tr><th>الخطورة</th><th>المريض</th><th>التنبيه</th><th>منذ</th></tr></thead><tbody>
+  {% for a in c.alerts %}<tr><td>{{ sev_badge(a.severity) }}</td><td><a href="/episodes/{{ a.episode_id }}/assessment">{{ a.full_name }}</a></td><td>{{ a.message }}</td><td class="nowrap">{{ a.created_at|dt }}</td></tr>{% endfor %}
+  </tbody></table></div></section>
+{% endif %}
+
+{% if c.review_queue is defined %}
+<section class="card"><h2>⧗ طلبات الاعتماد ({{ c.review_queue|length }})</h2>
+  {% if c.review_queue %}<div class="table-wrap"><table><thead><tr><th>المريض</th><th>الحلقة</th><th>الإصدار</th><th>الحالة</th><th>السلامة</th><th>الكاتب</th><th></th></tr></thead><tbody>
+  {% for r in c.review_queue %}<tr><td>{{ r.patient_name }} <span class="muted small num">{{ r.file_no }}</span></td><td>{{ r.title }}</td><td class="num">v{{ r.version_no }}</td>
+    <td>{{ plan_badge(r.status) }}</td><td>{{ safety_badge(r.safety_status) }}{% if r.open_alerts %} <span class="badge warn">⚠ {{ r.open_alerts }} تنبيه</span>{% endif %}</td>
+    <td>{{ r.author_name }}</td><td><a class="btn" href="/reviews/{{ r.id }}">{{ 'مراجعة' if r.can_decide else 'عرض' }}</a></td></tr>{% endfor %}
+  </tbody></table></div>{% else %}<p class="empty">لا توجد طلبات بانتظارك.</p>{% endif %}</section>
+{% endif %}
+
+<div class="grid c2">
+{% if c.new_patients is defined %}
+<section class="card"><h2>مرضى جدد بلا حلقة علاج</h2>
+  {% if c.new_patients %}<ul class="timeline">{% for p in c.new_patients %}<li><a href="/patients/{{ p.id }}">{{ p.full_name }}</a> <span class="muted small num">{{ p.file_no }}</span></li>{% endfor %}</ul>
+  {% else %}<p class="empty">لا يوجد.</p>{% endif %}</section>
+<section class="card"><h2>تقييمات قيد الإنجاز</h2>
+  {% if c.assessments_in_progress %}<ul class="timeline">{% for e in c.assessments_in_progress %}<li><a href="/episodes/{{ e.episode_id }}/assessment">{{ e.full_name }} — {{ e.title }}</a><br>{{ safety_badge(e.safety_status) }}</li>{% endfor %}</ul>
+  {% else %}<p class="empty">لا يوجد.</p>{% endif %}</section>
+<section class="card"><h2>مسوداتي والخطط المعادة</h2>
+  {% if c.my_drafts %}<ul class="timeline">{% for e in c.my_drafts %}<li><a href="/episodes/{{ e.episode_id }}/plan">{{ e.full_name }} — {{ e.title }}</a> {{ plan_badge(e.status) }} <span class="num small">v{{ e.version_no }}</span></li>{% endfor %}</ul>
+  {% else %}<p class="empty">لا يوجد.</p>{% endif %}</section>
+<section class="card"><h2>مراجعات 6/12 مستحقة</h2>
+  {% if c.due_reviews %}<ul class="timeline">{% for e in c.due_reviews %}<li><a href="/episodes/{{ e.episode_id }}/sessions#progress">{{ e.full_name }} — {{ e.title }}</a> <span class="badge warn">⚠ مراجعة {{ 'الجلسة 6' if e.milestone == 'S6' else 'الجلسة 12' }}</span> <span class="small muted">({{ e.sessions }} جلسة)</span></li>{% endfor %}</ul>
+  {% else %}<p class="empty">لا يوجد.</p>{% endif %}</section>
+<section class="card"><h2>جلسات اليوم</h2>
+  {% if c.today_sessions %}<ul class="timeline">{% for s in c.today_sessions %}<li><a href="/episodes/{{ s.episode_id }}/sessions">{{ s.full_name }}</a> — الجلسة <span class="num">{{ s.session_no }}</span> · {{ s.therapist }}</li>{% endfor %}</ul>
+  {% else %}<p class="empty">لم تُسجّل جلسات اليوم بعد.</p>{% endif %}</section>
+<section class="card"><h2>مرضى بخطة معتمدة</h2>
+  {% if c.active_treatment %}<ul class="timeline">{% for e in c.active_treatment %}<li><a href="/episodes/{{ e.episode_id }}/sessions">{{ e.full_name }} — {{ e.title }}</a> <span class="small muted">الجلسات: <span class="num">{{ e.sessions }}/{{ e.planned or '؟' }}</span> · خطة v{{ e.version_no }}</span></li>{% endfor %}</ul>
+  {% else %}<p class="empty">لا يوجد.</p>{% endif %}</section>
+{% endif %}
+{% if c.recent_patients is defined %}
+<section class="card"><h2>آخر المرضى المسجلين</h2>
+  <ul class="timeline">{% for p in c.recent_patients %}<li><a href="/patients/{{ p.id }}">{{ p.full_name }}</a> <span class="muted small num">{{ p.file_no }}</span></li>{% endfor %}</ul>
+  <p class="small muted">صلاحية الاستقبال: بيانات الهوية والتواصل والتسجيل فقط، دون التفاصيل الطبية.</p></section>
+{% endif %}
+</div>
+{% if user.role_code == 'SYSADMIN' %}<div class="notice">مسؤول النظام: إدارة الحسابات والدعم التقني. لا يُمنح الاطلاع على السجلات الصحية افتراضياً.</div>{% endif %}
+{% if user.role_code == 'ACCOUNTING' %}<div class="notice">المحاسبة: الباقات والدفعات فقط من صفحة <a href="/billing">المحاسبة</a>، دون تفاصيل طبية.</div>{% endif %}
+{% endblock %}

@@ -1,0 +1,14 @@
+{% extends "base.html" %}
+{% block title %}سجل التدقيق{% endblock %}
+{% block content %}
+<h1>سجل التدقيق</h1>
+<p class="sub">سجل إلحاقي فقط: قاعدة البيانات ترفض تعديل أو حذف أي حدث. {% if not has_perm(user, 'audit.read.clinical') %}تظهر لك أحداث الأمان والإدارة فقط.{% endif %}</p>
+<form class="card tight actions" method="get"><label for="fa" class="inline">الإجراء</label>
+  <select id="fa" name="action"><option value="">الكل</option>{% for a in ['PLAN_APPROVE','PLAN_REQUEST_CHANGES','PLAN_ESCALATE','PLAN_HOLD','PLAN_SUBMIT','SAFETY_EVALUATED','EPISODE_AUTO_HOLD','EXAM_RESULT_AMEND','LOGIN_FAILED','LOGIN','USER_UPDATE','DELEGATION_GRANT','DEPARTMENT_TRANSFER','REPORT_EXPORT'] %}<option value="{{ a }}" {% if request.args.get('action') == a %}selected{% endif %}>{{ a }}</option>{% endfor %}</select>
+  <button>تصفية</button></form>
+<div class="card"><div class="table-wrap"><table><thead><tr><th>#</th><th>الوقت</th><th>المستخدم</th><th>الإجراء</th><th>الكيان</th><th>المريض</th><th>السبب</th><th>تفاصيل</th></tr></thead><tbody>
+{% for e in events %}<tr><td class="num small">{{ e.id }}</td><td class="small nowrap">{{ e.at|dt }}</td><td class="small">{{ e.actor_name or '—' }}<br><span class="muted">{{ ROLE_NAMES.get(e.actor_role, '') }}</span></td>
+  <td class="ltr small">{{ e.action }}</td><td class="ltr small">{{ e.entity_type }}</td><td class="num small">{{ e.file_no or '' }}</td><td class="small">{{ e.reason or '' }}</td>
+  <td class="ltr small">{{ e.details|j|truncate(160) }}</td></tr>
+{% else %}<tr><td colspan="8" class="empty">لا أحداث.</td></tr>{% endfor %}</tbody></table></div></div>
+{% endblock %}

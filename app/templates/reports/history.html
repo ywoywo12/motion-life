@@ -1,0 +1,20 @@
+{% extends "reports/base.html" %}
+{% block body %}
+<p class="small muted">إصدار الاستبيان {{ qn.version }}. «لم يُسأل» و«غير معروف» تُطبع كما هي ولا تعني «لا».</p>
+{% for s in qn.sections %}
+{% set qs = qn.questions|selectattr('section','equalto',s.code)|selectattr('code','in',visible)|list %}
+{% if qs %}
+<h2>{{ loop.index }}. {{ s.title }}</h2>
+<table class="qa"><tbody>
+{% for q in qs %}{% set a = answers.get(q.code) %}<tr><td>{{ q.text }}</td><td>{% if a and a.status == 'ANSWERED' and a.value == 'YES' and q.code.startswith('HX_SF_') %}<span class="flag">نعم</span>{% else %}{{ display_value(q, a) }}{% endif %}
+  {% if a and a.note %}<br><span class="small muted">ملاحظة: {{ a.note }}</span>{% endif %}
+  {% if a and a.status != 'NOT_ASKED' %}<br><span class="small muted">{{ a.recorded_by }} · {{ a.recorded_at|ndate }}{% if a.source == 'PATIENT_REPORTED' %} · إجابة المريض{% endif %}</span>{% endif %}</td></tr>{% endfor %}
+</tbody></table>
+{% if s.code == 'H6' %}{% set rows = entries|selectattr('entry_type','equalto','SURGERY')|list %}{% if rows %}<table><thead><tr><th>العملية/المنطقة</th><th>السنة</th><th>ملاحظات</th></tr></thead><tbody>{% for e in rows %}<tr><td>{{ e.data.procedure }}</td><td class="num">{{ e.data.year or '—' }}</td><td>{{ e.data.notes or '' }}</td></tr>{% endfor %}</tbody></table>{% endif %}{% endif %}
+{% if s.code == 'H7' %}{% set rows = entries|selectattr('entry_type','equalto','MEDICATION')|list %}{% if rows %}<table><thead><tr><th>اسم الدواء</th><th>الجرعة</th><th>السبب</th></tr></thead><tbody>{% for e in rows %}<tr><td>{{ e.data.name }}</td><td>{{ e.data.dose or '' }}</td><td>{{ e.data.reason or '' }}</td></tr>{% endfor %}</tbody></table>{% endif %}{% endif %}
+{% endif %}
+{% endfor %}
+<h2>مراجعة الفريق الطبي</h2>
+<div class="box">{% if review %}راجع الاستبيان: <b>{{ review.reviewed_by }}</b> بتاريخ <span class="num">{{ review.reviewed_at|ndate }}</span>{% if review.note %} — {{ review.note }}{% endif %}{% else %}<span class="flag">لم تُسجَّل مراجعة الفريق بعد</span>{% endif %}</div>
+<div class="box small">إقرار المريض: النظام لا يسجّل توقيعاً نيابة عن المريض. وجود الإقرار الورقي الموقّع موضح في القسم 15 كما صرّح به الموظف.</div>
+{% endblock %}

@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="csrf-token" content="{{ csrf }}">
+<title>{% block title %}Motion Life{% endblock %} — Motion Life</title>
+<link rel="stylesheet" href="/static/css/app.css">
+<script src="/static/js/app.js" defer></script>
+{% block head %}{% endblock %}
+</head>
+<body>
+<a class="skip" href="#main">تخطَّ إلى المحتوى</a>
+{% if user %}
+<header class="topbar">
+  <div class="topbar-inner">
+    <a class="brand" href="/dashboard" aria-label="Motion Life — الصفحة الرئيسية"><b>MOTION <span>LIFE</span></b><small>الحركة تبدأ من هنا</small></a>
+    <nav class="nav" aria-label="التنقل الرئيسي">
+      {% set path = request.path %}
+      <a href="/dashboard" {% if path == '/dashboard' %}aria-current="page"{% endif %}>لوحة العمل</a>
+      {% if has_perm(user, 'patient.identity.read') %}<a href="/patients" {% if path.startswith('/patients') %}aria-current="page"{% endif %}>المرضى</a>{% endif %}
+      {% if has_perm(user, 'clinical.read') %}<a href="/library" {% if path.startswith('/library') %}aria-current="page"{% endif %}>المكتبة العلاجية</a>{% endif %}
+      {% if has_perm(user, 'plan.review') %}<a href="/reviews" {% if path.startswith('/reviews') %}aria-current="page"{% endif %}>المراجعات</a>{% endif %}
+      {% if has_perm(user, 'report.clinical') %}<a href="/reports" {% if path.startswith('/reports') %}aria-current="page"{% endif %}>التقارير</a>{% endif %}
+      {% if has_perm(user, 'billing.read') %}<a href="/billing" {% if path.startswith('/billing') %}aria-current="page"{% endif %}>المحاسبة</a>{% endif %}
+      {% if has_perm(user, 'admin.users') or has_perm(user, 'admin.delegations') %}<a href="/admin/users" {% if path.startswith('/admin/users') %}aria-current="page"{% endif %}>المستخدمون</a>{% endif %}
+      {% if has_perm(user, 'admin.catalogs.propose') or has_perm(user, 'admin.catalogs.publish') %}<a href="/admin/catalogs" {% if path.startswith('/admin/catalogs') %}aria-current="page"{% endif %}>الكتالوجات</a>{% endif %}
+      {% if has_perm(user, 'audit.read.clinical') or has_perm(user, 'audit.read.security') %}<a href="/admin/audit" {% if path.startswith('/admin/audit') %}aria-current="page"{% endif %}>سجل التدقيق</a>{% endif %}
+    </nav>
+    <div class="who"><a href="/account" class="inherit">{{ user.full_name }} · {{ ROLE_NAMES[user.role_code] }}</a><button type="button" id="logout">خروج</button></div>
+  </div>
+</header>
+{% if user.is_test_account %}<div class="demo-banner" role="note">حساب تجريبي — بيئة تطوير ببيانات وهمية فقط. لا تُدخل بيانات مرضى حقيقية.</div>{% endif %}
+{% endif %}
+<main id="main" tabindex="-1">
+{% block content %}{% endblock %}
+</main>
+{% block scripts %}{% endblock %}
+</body>
+</html>

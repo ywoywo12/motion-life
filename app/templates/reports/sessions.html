@@ -1,0 +1,17 @@
+{% extends "reports/base.html" %}
+{% block body %}
+<p class="small">الخطة المعتمدة الحالية: {% if approved %}الإصدار <span class="num">{{ approved.version_no }}</span> ({{ approved.content.sessions_planned }} جلسة مخططة){% else %}لا يوجد{% endif %} · تاريخ بدء العلاج: {{ sessions[0].session_date|ndate if sessions else '—' }}</p>
+<h2>جدول الجلسات</h2>
+<table><thead><tr><th>الجلسة</th><th>التاريخ</th><th>إصدار الخطة</th><th>الإجراءات</th><th>الألم قبل/بعد</th><th>الملاحظات / الاستجابة</th><th>المعالج</th></tr></thead><tbody>
+{% set n = [22, sessions|length]|max %}
+{% for i in range(1, n + 1) %}{% set s = sessions|selectattr('session_no','equalto',i)|first %}
+<tr><td class="num">{{ i }}</td>{% if s %}<td class="num">{{ s.session_date|ndate }}</td><td class="num">v{{ s.plan_version_no }}</td>
+  <td class="small">{% for iv in s.interventions %}{{ '✓' if iv.performed else '✗' }} {{ iv.title }}{% if iv.is_deviation %} (خارج الخطة: {{ iv.deviation_reason }}){% endif %}{% if not loop.last %}<br>{% endif %}{% endfor %}</td>
+  <td class="num">{{ s.pain_before if s.pain_before is not none else '—' }}/{{ s.pain_after if s.pain_after is not none else '—' }}</td>
+  <td class="small">{{ s.response or '' }}{% if s.adverse_event %}<br><span class="flag">حدث غير مرغوب: {{ s.adverse_details }}</span>{% endif %}{% if s.temp_modification %}<br>تعديل مؤقت: {{ s.temp_modification }}{% endif %}</td><td class="small">{{ s.therapist_name }}</td>
+{% else %}<td></td><td></td><td></td><td></td><td></td><td></td>{% endif %}</tr>
+{% if i in (6, 12) %}{% set rv = reviews|selectattr('milestone','equalto','S6' if i == 6 else 'S12')|first %}
+<tr><td colspan="7"><b>{{ 'التقييم بعد الجلسة السادسة' if i == 6 else 'التقييم بعد الجلسة الثانية عشرة' }}:</b> {% if rv %}{{ rv.summary }} <span class="small muted">({{ rv.created_by_name }} · <span class="num">{{ rv.created_at|ndate }}</span>)</span>{% else %}<span class="muted">—</span>{% endif %}</td></tr>{% endif %}
+{% endfor %}
+</tbody></table>
+{% endblock %}

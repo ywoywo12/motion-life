@@ -1,0 +1,27 @@
+{% extends "reports/base.html" %}
+{% block body %}
+<p class="small">إصدار التقييم <b class="num">{{ av.version_no }}</b> · أنهاه <b>{{ av.created_by_name }}</b> بتاريخ <span class="num">{{ av.created_at|ndate }}</span>{% if av.note %} · {{ av.note }}{% endif %} · إصدار الأسئلة {{ snap.questionnaire_version }}</p>
+{% set s = snap.safety %}
+<h2>فرز السلامة</h2>
+<div class="box"><b>{{ SAFETY_ICONS.get(s.status) }} {{ SAFETY_LABELS[s.status] }}</b> <span class="small muted">({{ s.rules_version }})</span>
+  {% for t in s.triggered %}<p><span class="flag">{{ t.severity }}</span> {{ t.message }}<br><span class="small">الإجراء: {{ t.action }} — بسبب: {% for b in t.because %}{{ b.text }}{% if not loop.last %}، {% endif %}{% endfor %}</span></p>{% endfor %}
+  {% if s.flags %}<p class="small">تنبيهات احتياطية: {% for f in s.flags %}{{ FLAG_LABELS.get(f, f) }}{% if not loop.last %}، {% endif %}{% endfor %}</p>{% endif %}
+  {% for r in referrals %}<p class="small">إحالة {{ r.urgency }} إلى {{ r.destination }} — {{ r.reason }} (قرره {{ r.decided_by_name }} · <span class="num">{{ r.decided_at|ndate }}</span>)</p>{% endfor %}</div>
+{% for sec in qn.sections %}
+{% set qs = qn.questions|selectattr('section','equalto',sec.code)|selectattr('code','in',visible)|list %}
+{% if qs %}<h2>{{ sec.title }}</h2><table class="qa"><tbody>
+{% for q in qs %}{% set a = snap.answers.get(q.code) %}<tr><td>{{ q.text }}</td><td>{% if q.safety and a and a.value == 'YES' %}<span class="flag">نعم</span>{% else %}{{ display_value(q, a) }}{% endif %}{% if a and a.note %}<br><span class="small muted">{{ a.note }}</span>{% endif %}</td></tr>{% endfor %}
+</tbody></table>{% endif %}
+{% if sec.code == 'IMAGING' %}<p class="small muted">موجودات الصور تُقرأ مع الفحص السريري؛ لا يُحدَّد مستوى الجذر العصبي من تقرير الرنين وحده.</p>{% endif %}
+{% endfor %}
+<h2>الفحص والاختبارات</h2>
+<table><thead><tr><th>الاختبار</th><th>الجهة</th><th>النتيجة</th><th>القيمة/التفاصيل</th></tr></thead><tbody>
+{% for r in snap.exam_results %}{% set base = r.test_code.split(':')[0] %}{% set t = tests.get(base) %}<tr><td>{{ t.name_ar if t else base }}{% if ':' in r.test_code %} — {{ r.test_code.split(':')[1] }}{% endif %}</td><td>{{ SIDE_LABELS[r.side] }}</td><td>{{ RESULT_LABELS[r.result] }}</td>
+  <td>{% if r.value_num is not none %}<span class="num">{{ r.value_num }}</span> {{ r.unit or '' }} {% endif %}{% if r.value_text %}{{ SENSORY_LABELS.get(r.value_text) if base == 'NEURO_DERMATOMES' else (REFLEX_LABELS.get(r.value_text) if base == 'NEURO_REFLEXES' else r.value_text) }}{% endif %}
+  {% if r.details and r.details.reproduces_familiar %} · يعيد إنتاج الأعراض المألوفة{% endif %}{% if r.details and r.details.movement %}{{ r.details.movement }} ×{{ r.details.reps }}: {{ r.details.before }} ← {{ r.details.after }} ({{ REPEATED_RESPONSES[r.details.response] }}){% endif %}{% if r.not_done_reason %}السبب: {{ r.not_done_reason }}{% endif %}{% if r.notes %} · {{ r.notes }}{% endif %}</td></tr>
+{% else %}<tr><td colspan="4">لا توجد نتائج</td></tr>{% endfor %}</tbody></table>
+<h2>الأهداف وقياسات البداية</h2>
+<table><thead><tr><th>الهدف</th><th>طريقة القياس</th><th>البداية</th><th>المستهدف</th></tr></thead><tbody>{% for g in snap.goals %}<tr><td>{{ g.description }}</td><td>{{ g.measure }}</td><td>{{ g.baseline_value or '—' }}</td><td>{{ g.target_value }} {{ g.unit or '' }}</td></tr>{% endfor %}</tbody></table>
+<table><thead><tr><th>المقياس</th><th>القيمة</th></tr></thead><tbody>{% for o in snap.outcomes if o.timepoint == 'BASELINE' %}<tr><td>{{ outcome_catalog[o.measure_code].name_ar }}{% if o.label %} — {{ o.label }}{% endif %}</td><td class="num">{{ o.value_num }}</td></tr>{% endfor %}</tbody></table>
+<div class="sign"><div>المعالج: {{ av.created_by_name }}</div><div>التاريخ: <span class="num">{{ av.created_at|ndate }}</span></div></div>
+{% endblock %}

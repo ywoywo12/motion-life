@@ -1,0 +1,7 @@
+<div class="table-wrap"><table><thead><tr><th>المقياس</th><th>البداية</th><th>بعد الجلسة 6</th><th>بعد الجلسة 12</th><th>عند الإنهاء</th><th>التغير</th></tr></thead><tbody>
+{% for t in table %}<tr><td>{{ t.name }}{% if t.label %} — <b>{{ t.label }}</b>{% endif %} <span class="small muted">({{ t.unit or '' }})</span></td>
+  {% for tp in ['BASELINE','S6','S12','DISCHARGE'] %}<td class="num">{{ t['values'][tp] if tp in t['values'] else '—' }}</td>{% endfor %}
+  <td>{% for tp, ch in (t.change or {}).items() %}<span class="badge {{ 'ok' if ch.improved else ('warn' if ch.improved == false else '') }}">{{ '▲' if ch.diff > 0 else ('▼' if ch.diff < 0 else '＝') }} <span class="num">{{ ch.diff }}</span> {{ TIMEPOINTS[tp] }} · {{ 'تحسن' if ch.improved else ('تراجع' if ch.improved == false else 'دون تغير') }}</span> {% endfor %}</td></tr>
+{% else %}<tr><td colspan="6" class="empty">لا توجد قياسات.</td></tr>{% endfor %}
+</tbody></table></div>
+<p class="small muted">انخفاض الألم وحده لا يعني نجاح التأهيل الكامل؛ تُقرأ المقاييس الوظيفية وأهداف المريض معاً.</p>

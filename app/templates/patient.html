@@ -1,0 +1,125 @@
+{% extends "base.html" %}
+{% from "macros.html" import safety_badge, plan_badge, sev_badge %}
+{% block title %}{{ p.full_name }}{% endblock %}
+{% block content %}
+<div class="crumbs"><a href="/patients">المرضى</a> › {{ p.full_name }}</div>
+<div class="page-head">
+  <div><h1>{{ p.full_name }} {% if p.is_synthetic %}<span class="badge">بيانات تجريبية</span>{% endif %}</h1>
+    <p class="sub">رقم الملف <span class="num">{{ p.file_no }}</span> · {{ p.department.name }}</p></div>
+  {% if clinical %}<div class="actions"><a class="btn" href="/patients/{{ p.id }}/history">التاريخ الطبي</a>
+    <a class="btn" href="/reports/patient/{{ p.id }}/history.pdf">طباعة الاستبيان PDF</a></div>{% endif %}
+</div>
+
+{% if alerts %}<div class="notice danger" role="alert"><h3>⚠ تحذيرات مفتوحة</h3><ul>{% for a in alerts %}<li>{{ sev_badge(a.severity) }} {{ a.message }}</li>{% endfor %}</ul></div>{% endif %}
+
+<div class="grid c2">
+<section class="card"><h2>بيانات المريض</h2>
+  {% if p.birth_date is defined %}
+  <dl class="kv">
+    <dt>الجنس</dt><dd>{{ {'M':'ذكر','F':'أنثى'}[p.sex] }}</dd>
+    <dt>تاريخ الميلاد / العمر</dt><dd>{{ p.birth_date|date }} · {{ p.birth_date|age }}</dd>
+    <dt>الهاتف</dt><dd class="num">{{ p.phone or '—' }}</dd>
+    <dt>المهنة</dt><dd>{{ p.occupation or '—' }}</dd>
+    <dt>الطول / الوزن</dt><dd>{{ p.height_cm or '—' }} سم / {{ p.weight_kg or '—' }} كغ</dd>
+    <dt>الطبيب المحوِّل</dt><dd>{{ p.referring_doctor or '—' }}</dd>
+    <dt>الأرشيف الورقي</dt><dd>تسلسل {{ p.serial_no or '—' }} · رف {{ p.archive_shelf or '—' }} · خزانة {{ p.archive_cabinet or '—' }}</dd>
+    {% for c in p.contacts %}<dt>للطوارئ</dt><dd>{{ c.name }} ({{ c.relation or '—' }}) <span class="num">{{ c.phone or '' }}</span></dd>{% endfor %}
+    <dt>المعالجون</dt><dd>{% for t in p.therapists %}{{ t.full_name }}{% if not loop.last %}، {% endif %}{% else %}غير مخصص{% endfor %}</dd>
+  </dl>
+  {% if has_perm(user, 'patient.identity.write') %}
+  <details class="mt-m"><summary>تعديل بيانات الهوية</summary>
+    <form data-api="/api/patients/{{ p.id }}" data-method="PATCH" data-reload data-success="تم التعديل">
+      <input type="hidden" name="version" value="{{ p.version }}" data-num>
+      <div class="form-row mt-s">
+        <div class="field"><label for="e-n">الاسم</label><input id="e-n" name="full_name" value="{{ p.full_name }}"></div>
+        <div class="field"><label for="e-b">تاريخ الميلاد</label><input id="e-b" type="date" name="birth_date" value="{{ p.birth_date or '' }}"></div>
+        <div class="field"><label for="e-p">الهاتف</label><input id="e-p" type="tel" name="phone" value="{{ p.phone or '' }}"></div>
+        <div class="field"><label for="e-o">المهنة</label><input id="e-o" name="occupation" value="{{ p.occupation or '' }}"></div>
+      </div>
+      <button class="primary">حفظ التعديل</button>
+      <p class="small muted">يُرفض الحفظ إن عدّل شخص آخر الملف بعد فتحك له (منع الكتابة فوق التعديلات).</p>
+    </form></details>
+  {% endif %}
+  {% else %}<p class="muted">بيانات مختصرة حسب صلاحيتك.</p>{% endif %}
+</section>
+
+{% if therapist_options is defined %}
+<section class="card"><h2>التخصيص والقسم</h2>
+  <form data-api="/api/patients/{{ p.id }}/assignments" data-reload data-success="تم التخصيص" class="mb-m">
+    <div class="form-row"><div class="field"><label for="a-t">تخصيص معالج</label><select id="a-t" name="therapist_id" required>
+      <option value="">— اختر —</option>{% for t in therapist_options %}<option value="{{ t.id }}">{{ t.full_name }}</option>{% endfor %}</select></div>
+      <div class="field"><label for="a-r">ملاحظة</label><input id="a-r" name="reason"></div></div>
+    <button>تخصيص</button></form>
+  {% for t in p.therapists %}
+  <form data-api="/api/patients/{{ p.id }}/assignments/{{ t.id }}/end" data-reload class="actions mb-s">
+    <span>{{ t.full_name }}</span><input name="reason" placeholder="سبب إنهاء التخصيص" required aria-label="سبب إنهاء التخصيص"><button class="warn">إنهاء التخصيص</button></form>
+  {% endfor %}
+  <hr>
+  <form data-api="/api/patients/{{ p.id }}/transfer" data-reload data-confirm="نقل المريض لقسم آخر ينهي تخصيص المعالجين من خارج القسم الجديد. متابعة؟">
+    <div class="form-row"><div class="field"><label for="tr-d">نقل إلى قسم</label><select id="tr-d" name="department_id" required>
+      {% for dp in deps %}{% if dp.id != p.department_id %}<option value="{{ dp.id }}">{{ dp.name }}</option>{% endif %}{% endfor %}</select></div>
+      <div class="field"><label for="tr-r">سبب النقل (إلزامي)</label><input id="tr-r" name="reason" required></div></div>
+    <button class="warn">نقل موثّق</button></form>
+</section>
+{% endif %}
+</div>
+
+{% if clinical %}
+<section class="card"><div class="page-head"><h2>حلقات العلاج</h2></div>
+  {% if episodes %}<div class="table-wrap"><table><thead><tr><th>المشكلة</th><th>الحالة</th><th>السلامة</th><th>التقييم</th><th>الخطة</th><th>الجلسات</th><th></th></tr></thead><tbody>
+  {% for e in episodes %}<tr><td>{{ e.title }}<br><span class="small muted">{{ e.created_at|date }}</span></td>
+    <td>{% if e.status == 'ON_HOLD' %}<span class="badge danger">⏸ معلّقة</span><br><span class="small">{{ e.hold_reason }}</span>{% elif e.status == 'CLOSED' %}<span class="badge">مغلقة</span>{% else %}<span class="badge ok">✓ مفتوحة</span>{% endif %}</td>
+    <td>{{ safety_badge(e.safety_status) }}</td>
+    <td>{% if e.assessment_status == 'FINALIZED' %}<span class="badge ok">✓ إصدار {{ e.assessment_version }}</span>{% else %}<span class="badge warn">✎ قيد الإنجاز</span>{% endif %}</td>
+    <td>{% if e.latest_plan_status %}{{ plan_badge(e.latest_plan_status) }}{% else %}—{% endif %}</td>
+    <td class="num">{{ e.session_count }}</td>
+    <td class="actions"><a class="btn" href="/episodes/{{ e.id }}/assessment">فتح</a></td></tr>{% endfor %}
+  </tbody></table></div>{% else %}<p class="empty">لا توجد حلقات علاج بعد.</p>{% endif %}
+  {% if has_perm(user, 'clinical.write') %}
+  <form data-api="/api/patients/{{ p.id }}/episodes" data-redirect="/episodes/{id}/assessment" class="mt-m">
+    <div class="form-row"><div class="field"><label for="ep-t">مشكلة جديدة (حلقة علاج منفصلة)</label><input id="ep-t" name="title" required placeholder="مثال: ألم أسفل الظهر مع امتداد للساق اليمنى"></div>
+      <div class="field"><label for="ep-r">المنطقة</label><select id="ep-r" name="region"><option value="LUMBAR">أسفل الظهر (العمود القطني)</option></select>
+        <span class="hint">مناطق الجسم الأخرى مؤجلة لما بعد V1.</span></div></div>
+    <button class="primary">فتح حلقة وبدء التقييم</button></form>
+  {% endif %}
+</section>
+
+<div class="grid c2">
+<section class="card"><h2>ملخص التاريخ الطبي</h2>
+  {% set hs = history_summary %}
+  {% if history_review %}<p class="small"><span class="badge ok">✓ رُوجع</span> بواسطة {{ history_review.reviewed_by }} · {{ history_review.reviewed_at|dt }}</p>{% else %}<p class="small"><span class="badge warn">◌ لم يُراجَع من الفريق بعد</span></p>{% endif %}
+  <dl class="kv">
+    <dt>الشكوى</dt><dd>{% for k, v in hs.complaint %}{{ v }}{% else %}—{% endfor %}</dd>
+    <dt>أمراض (نعم)</dt><dd>{{ hs.conditions|join('، ') or '—' }}</dd>
+    <dt>أدوية/حساسية</dt><dd>{% for k, v in hs.meds %}{{ k }}: {{ v }}<br>{% else %}—{% endfor %}
+      {% for e in entries if e.entry_type == 'MEDICATION' %}{{ e.data.name }} {{ e.data.dose or '' }}{% if not loop.last %}، {% endif %}{% endfor %}</dd>
+    <dt>زرعات/أجهزة</dt><dd>{% for k, v in hs.implants %}{{ v }}{% else %}—{% endfor %}</dd>
+    <dt>قيود وظيفية</dt><dd>{% for k, v in hs.function %}{{ k }}: {{ v }}<br>{% else %}—{% endfor %}</dd>
+    <dt>هدف المريض</dt><dd>{% for k, v in hs.goal %}{{ v }}{% else %}—{% endfor %}</dd>
+    <dt>علامات أبلغ عنها المريض</dt><dd>{% if hs.patient_flags %}<span class="badge danger">⚠ {{ hs.patient_flags|join('، ') }}</span>{% else %}—{% endif %}</dd>
+  </dl>
+  <a class="btn mt-s" href="/patients/{{ p.id }}/history">فتح الاستبيان الكامل</a>
+</section>
+
+<section class="card"><h2>المستندات المرفقة</h2>
+  {% if attachments %}<ul class="timeline">{% for a in attachments %}<li><a href="/api/attachments/{{ a.id }}" target="_blank" rel="noopener">{{ a.filename }}</a> <span class="small muted">{{ a.uploaded_at|date }} · {{ a.uploaded_by_name }}</span></li>{% endfor %}</ul>
+  {% else %}<p class="empty">لا توجد مرفقات.</p>{% endif %}
+  {% if has_perm(user, 'clinical.write') %}
+  <form data-api="/api/patients/{{ p.id }}/attachments" enctype="multipart/form-data" data-reload data-success="تم الرفع" class="mt-m">
+    <div class="form-row"><div class="field"><label for="at-k">النوع</label><select id="at-k" name="kind"><option value="IMAGING_REPORT">تقرير صور طبية</option><option value="SURGICAL_REPORT">تقرير عملية</option><option value="REFERRAL_LETTER">رسالة إحالة</option><option value="OTHER">أخرى</option></select></div>
+      <div class="field"><label for="at-f">الملف (PDF/PNG/JPEG)</label><input id="at-f" type="file" name="file" accept="application/pdf,image/png,image/jpeg" required></div></div>
+    <button>رفع</button><p class="small muted">تُحفظ الملفات خارج المجلد العام ولا تُفتح إلا عبر النظام بعد التحقق من الصلاحية.</p></form>
+  {% endif %}
+</section>
+</div>
+{% for e in episodes if outcomes[e.id] %}
+{% set table = outcomes[e.id] %}<section class="card"><h2>تطور القياسات — {{ e.title }}</h2>{% include "_outcome_table.html" %}</section>
+{% endfor %}
+{% else %}
+<div class="notice">صلاحيتك تشمل بيانات الهوية والتواصل فقط؛ لا تظهر هنا التفاصيل الطبية.</div>
+{% endif %}
+
+{% if billing_episodes is defined and billing_episodes %}
+<section class="card"><h2>المحاسبة</h2><ul class="timeline">{% for e in billing_episodes %}<li><a href="/episodes/{{ e.id }}/billing">{{ e.title }}</a> <span class="small muted">{{ e.created_at|date }}</span></li>{% endfor %}</ul></section>
+{% endif %}
+{% endblock %}

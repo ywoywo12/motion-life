@@ -1,0 +1,84 @@
+{% extends "base.html" %}
+{% from "macros.html" import patient_head, plan_badge, ep_tabs %}
+{% block title %}الجلسات — {{ p.full_name }}{% endblock %}
+{% block content %}
+{{ patient_head(p, ep) }}
+<div class="page-head"><div><h1>متابعة الجلسات</h1>
+  <p class="sub">{{ p.full_name }} · {{ ep.title }} · الجلسات المسجلة: <span class="num">{{ v.sessions|length }}{% if v.planned %} / {{ v.planned }}{% endif %}</span></p></div>
+  <a class="btn" href="/reports/episode/{{ ep.id }}/sessions.pdf">PDF متابعة الجلسات</a></div>
+{{ ep_tabs(ep, 'sessions') }}
+
+{% for m in v.due %}<div class="notice warn" role="alert">⚠ إعادة التقييم {{ 'بعد الجلسة السادسة' if m == 'S6' else 'بعد الجلسة الثانية عشرة' }} مستحقة. <a href="#progress">سجّلها الآن</a>.</div>{% endfor %}
+
+{% if not v.approved %}
+<div class="notice danger"><h3>⛔ لا توجد خطة معتمدة</h3><p>لا تُسجّل جلسات علاج لخطة غير معتمدة. أكمل التقييم وأرسل الخطة للمراجعة.</p></div>
+{% elif ep.status != 'OPEN' %}
+<div class="notice danger"><h3>⏸ الحلقة معلّقة</h3><p>{{ ep.hold_reason }}</p></div>
+{% else %}
+<form class="card" data-api="/api/episodes/{{ ep.id }}/sessions" data-reload data-success="سُجّلت الجلسة">
+  <h2>تسجيل الجلسة {{ v.sessions|length + 1 }} — على الخطة المعتمدة v{{ v.approved.version_no }}</h2>
+  <input type="hidden" name="plan_version_id" value="{{ v.approved.id }}">
+  <div class="form-row">
+    <div class="field"><label for="s-d">التاريخ</label><input id="s-d" type="date" name="session_date" required></div>
+    <div class="field"><label for="s-pb">الألم قبل (0–10)</label><input id="s-pb" type="number" min="0" max="10" name="pain_before"></div>
+    <div class="field"><label for="s-pa">الألم بعد (0–10)</label><input id="s-pa" type="number" min="0" max="10" name="pain_after"></div>
+  </div>
+  <h3>الإجراءات المنفذة فعلياً</h3>
+  <div data-rows id="iv-rows">
+  {% for it in v['items'] %}<div class="item-row"><input type="hidden" name="interventions[{{ loop.index0 }}].plan_item_id" value="{{ it.id }}">
+    <label class="check"><input type="checkbox" name="interventions[{{ loop.index0 }}].performed" checked> <b>{{ CATEGORY_LABELS[it.category] }}: {{ it.title }}</b> <span class="small muted">— الخطة: {{ it.dosage or '—' }}</span></label>
+    <div class="form-row mt-s"><input name="interventions[{{ loop.index0 }}].dosage_actual" placeholder="الجرعة الفعلية إن اختلفت" aria-label="الجرعة الفعلية"><input name="interventions[{{ loop.index0 }}].notes" placeholder="ملاحظات" aria-label="ملاحظات"></div></div>{% endfor %}
+  </div>
+  <details class="mt-s"><summary>إجراء خارج الخطة المعتمدة (يتطلب مبرراً ويُرفع للمراجعة)</summary>
+    <div class="item-row mt-s"><div class="form-row"><input name="interventions[{{ v['items']|length }}].title" placeholder="اسم الإجراء" aria-label="اسم الإجراء الإضافي">
+      <input name="interventions[{{ v['items']|length }}].deviation_reason" placeholder="المبرر" aria-label="مبرر الإجراء الإضافي"><input name="interventions[{{ v['items']|length }}].dosage_actual" placeholder="الجرعة" aria-label="جرعة الإجراء الإضافي"></div></div></details>
+  <div class="field mt-s"><label for="s-r">استجابة المريض</label><textarea id="s-r" name="response"></textarea></div>
+  <div class="field"><label for="s-tm">تعديل مؤقت مبرر (إن وجد)</label><input id="s-tm" name="temp_modification"></div>
+  <label class="check"><input type="checkbox" name="adverse_event" data-toggle-target="ae"> حدث غير مرغوب</label>
+  <div id="ae" hidden class="field"><label for="s-ae">تفاصيل الحدث والإجراء المتخذ</label><textarea id="s-ae" name="adverse_details"></textarea></div>
+  <label class="check"><input type="checkbox" name="needs_review"> تحتاج الحالة مراجعة من رئيس القسم</label>
+  <div class="field"><label for="s-n">ملاحظات</label><input id="s-n" name="notes"></div>
+  <button class="primary">حفظ الجلسة</button>
+  <p class="small muted">تُربط الجلسة نهائياً بإصدار الخطة المعتمد الحالي، ولا تتغير إذا عُدّلت الخطة لاحقاً.</p>
+</form>
+{% endif %}
+
+<section class="card"><h2>سجل الجلسات</h2>
+<div class="table-wrap"><table><thead><tr><th>#</th><th>التاريخ</th><th>إصدار الخطة</th><th>الإجراءات</th><th>الألم قبل/بعد</th><th>الملاحظات/الاستجابة</th><th>المعالج</th></tr></thead><tbody>
+{% for s in v.sessions %}<tr><td class="num">{{ s.session_no }}</td><td class="nowrap">{{ s.session_date|date }}</td><td class="num">v{{ s.plan_version_no }}</td>
+  <td class="small">{% for i in s.interventions %}{{ '✓' if i.performed else '✗' }} {{ i.title }}{% if i.dosage_actual %} ({{ i.dosage_actual }}){% endif %}{% if i.is_deviation %} <span class="badge warn">خارج الخطة: {{ i.deviation_reason }}</span>{% endif %}<br>{% endfor %}</td>
+  <td class="num">{{ s.pain_before if s.pain_before is not none else '—' }} / {{ s.pain_after if s.pain_after is not none else '—' }}</td>
+  <td class="small">{{ s.response or '' }}{% if s.adverse_event %}<br><span class="badge danger">⚠ حدث غير مرغوب: {{ s.adverse_details }}</span>{% endif %}{% if s.temp_modification %}<br><span class="badge warn">تعديل مؤقت: {{ s.temp_modification }}</span>{% endif %}{% if s.needs_review %}<br><span class="badge warn">تحتاج مراجعة</span>{% endif %}</td>
+  <td class="small">{{ s.therapist_name }}</td></tr>
+  {% if s.session_no in (6, 12) %}<tr><td colspan="7" class="small"><b>— {{ 'التقييم بعد الجلسة السادسة' if s.session_no == 6 else 'التقييم بعد الجلسة الثانية عشرة' }}:</b>
+    {% set rv = v.reviews|selectattr('milestone','equalto','S6' if s.session_no == 6 else 'S12')|first %}{% if rv %}{{ rv.summary }} ({{ rv.created_by_name }}){% else %}<span class="badge warn">لم يُسجّل بعد</span>{% endif %}</td></tr>{% endif %}
+{% else %}<tr><td colspan="7" class="empty">لا توجد جلسات.</td></tr>{% endfor %}
+</tbody></table></div></section>
+
+<section class="card" id="progress"><h2>إعادة التقييم (بعد الجلسة 6 و12 أو عند الحاجة)</h2>
+  {% for rv in v.reviews %}<div class="item-row"><b>{{ {'S6':'بعد الجلسة 6','S12':'بعد الجلسة 12','AD_HOC':'عند الحاجة','DISCHARGE':'عند الإنهاء'}[rv.milestone] }}</b> (بعد {{ rv.after_session_no }} جلسة) — {{ rv.summary }}
+    <br><span class="small muted">{{ rv.created_by_name }} · {{ rv.created_at|dt }} · القرار: {{ {'CONTINUE':'متابعة','MODIFY_PLAN':'تعديل الخطة','DISCHARGE':'إنهاء','REFER':'إحالة','HOLD':'تعليق'}[rv.decision] }}</span></div>{% endfor %}
+  {% if v.approved or v.sessions %}
+  <form data-api="/api/episodes/{{ ep.id }}/progress-reviews" data-reload data-success="سُجّلت إعادة التقييم" class="mt-m">
+    <div class="form-row"><div class="field"><label for="pr-m">النوع</label><select id="pr-m" name="milestone">
+      {% for m in v.due %}<option value="{{ m }}">{{ 'بعد الجلسة 6' if m == 'S6' else 'بعد الجلسة 12' }}</option>{% endfor %}
+      <option value="AD_HOC">عند الحاجة</option><option value="DISCHARGE">عند الإنهاء</option></select></div>
+      <div class="field"><label for="pr-d">القرار</label><select id="pr-d" name="decision"><option value="CONTINUE">متابعة الخطة</option><option value="MODIFY_PLAN">تعديل الخطة (إصدار جديد)</option><option value="DISCHARGE">إنهاء البرنامج</option><option value="REFER">إحالة</option><option value="HOLD">تعليق</option></select></div></div>
+    <h3>القياسات القابلة للمقارنة مع البداية</h3>
+    <div data-rows id="m-rows">
+    {% for o in baseline %}<div class="item-row form-row"><input type="hidden" name="measures[{{ loop.index0 }}].measure_code" value="{{ o.measure_code }}">
+      {% if o.label %}<input type="hidden" name="measures[{{ loop.index0 }}].label" value="{{ o.label }}">{% endif %}
+      <label>{{ v.outcome_catalog[o.measure_code].name_ar }}{% if o.label %} — {{ o.label }}{% endif %} <span class="small muted">(البداية: <span class="num">{{ o.value_num }}</span>)</span>
+        <input type="number" step="any" name="measures[{{ loop.index0 }}].value" required></label></div>{% endfor %}
+    </div>
+    {% if not baseline %}<p class="notice warn small">لا توجد قياسات بداية مسجلة؛ سجّلها في خطوة الأهداف بالتقييم.</p>{% endif %}
+    <h3>حالة الأهداف</h3>
+    {% for g in v.goals %}<div class="field"><label for="gs-{{ g.id }}">{{ g.description }} ({{ g.baseline_value or '—' }} ← {{ g.target_value }} {{ g.unit or '' }})</label>
+      <select id="gs-{{ g.id }}" name="goal_status.{{ g.id }}">{% for k, l in GOAL_STATUS.items() %}<option value="{{ k }}" {% if g.status == k %}selected{% endif %}>{{ l }}</option>{% endfor %}</select></div>{% endfor %}
+    <div class="field"><label for="pr-s">ملخص إعادة التقييم</label><textarea id="pr-s" name="summary" required></textarea></div>
+    <button class="primary">حفظ إعادة التقييم</button>
+    <p class="small muted">انخفاض الألم وحده لا يعني نجاح التأهيل الكامل؛ قارن الوظيفة والأهداف أيضاً.</p>
+  </form>
+  {% endif %}
+</section>
+{% endblock %}

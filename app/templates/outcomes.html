@@ -1,0 +1,12 @@
+{% extends "base.html" %}
+{% from "macros.html" import patient_head, ep_tabs %}
+{% block title %}النتائج والتطور — {{ p.full_name }}{% endblock %}
+{% block content %}
+{{ patient_head(p, ep) }}
+<div class="page-head"><div><h1>القياسات والتطور</h1><p class="sub">{{ p.full_name }} · {{ ep.title }}</p></div>
+  <a class="btn" href="/reports/episode/{{ ep.id }}/progress.pdf">PDF تقرير التطور</a></div>
+{{ ep_tabs(ep, 'outcomes') }}
+<section class="card"><h2>مقارنة البداية مع الجلسة 6 و12</h2>{% include "_outcome_table.html" %}</section>
+<section class="card"><h2>الأهداف</h2><ul class="timeline">{% for g in goals %}<li>{{ g.description }} — {{ g.baseline_value or '—' }} ← {{ g.target_value }} {{ g.unit or '' }} · <span class="badge {{ 'ok' if g.status == 'ACHIEVED' else '' }}">{{ GOAL_STATUS[g.status] }}</span></li>{% else %}<li>لا توجد أهداف.</li>{% endfor %}</ul></section>
+<section class="card"><h2>مراجعات التطور</h2><ul class="timeline">{% for r in reviews %}<li><b>{{ TIMEPOINTS.get(r.milestone, r.milestone) if r.milestone != 'AD_HOC' else 'عند الحاجة' }}</b> — {{ r.summary }} <span class="small muted">({{ r.created_by_name }} · {{ r.created_at|date }})</span></li>{% else %}<li>لا توجد.</li>{% endfor %}</ul></section>
+{% endblock %}

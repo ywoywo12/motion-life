@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+{% block title %}التقارير{% endblock %}
+{% block content %}
+<h1>التقارير</h1>
+<p class="sub">تقارير PDF عربية تُنشأ على الخادم لحظة الطلب، لكل ملف ضمن صلاحيتك فقط. كل طباعة تُسجَّل في سجل التدقيق.</p>
+<div class="card"><div class="table-wrap"><table><thead><tr><th>المريض</th><th>الحلقة</th><th>التقارير</th></tr></thead><tbody>
+{% for r in rows %}<tr><td>{{ r.full_name }}<br><span class="num small muted">{{ r.file_no }}</span></td><td>{{ r.title or '—' }}</td>
+  <td class="actions">
+    <a class="btn" href="/reports/patient/{{ r.patient_id }}/history.pdf">الملف الطبي</a>
+    {% if r.episode_id %}
+    <a class="btn" href="/reports/episode/{{ r.episode_id }}/assessment.pdf">التقييم</a>
+    {% if r.approved_version %}<a class="btn" href="/reports/episode/{{ r.episode_id }}/plan.pdf">الخطة المعتمدة v{{ r.approved_version }}</a><a class="btn" href="/reports/episode/{{ r.episode_id }}/home-program.pdf">برنامج التمارين للمريض</a>{% endif %}
+    {% if r.sessions %}<a class="btn" href="/reports/episode/{{ r.episode_id }}/sessions.pdf">الجلسات</a><a class="btn" href="/reports/episode/{{ r.episode_id }}/progress.pdf">الملخص الدوري</a>{% endif %}
+    <a class="btn" href="/reports/episode/{{ r.episode_id }}/patient-file.pdf">ملف المريض (صفحتان)</a>
+    {% endif %}</td></tr>
+{% else %}<tr><td colspan="3" class="empty">لا توجد ملفات ضمن صلاحيتك.</td></tr>{% endfor %}
+</tbody></table></div></div>
+{% endblock %}

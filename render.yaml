@@ -1,0 +1,30 @@
+# Render Blueprint — trial deployment with demo accounts and synthetic patients only.
+# Render: New + > Blueprint > choose this repository > Apply.
+services:
+  - type: web
+    name: motion-life-trial
+    runtime: docker
+    plan: free
+    healthCheckPath: /login
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase: { name: motion-life-db, property: connectionString }
+      - key: SECRET_KEY
+        generateValue: true
+      - key: ML_ENV
+        value: production
+      - key: ALLOW_DEMO
+        value: "1"
+      - key: TRUST_PROXY
+        value: "1"
+      - key: COOKIE_SECURE
+        value: "1"
+      - key: CHROMIUM_NO_SANDBOX
+        value: "1"
+      - key: WEB_WORKERS
+        value: "1"
+databases:
+  - name: motion-life-db
+    plan: free
+    databaseName: motionlife
+    user: ml_app

@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+{% block title %}المستخدمون{% endblock %}
+{% block content %}
+<h1>المستخدمون والأدوار والتفويضات</h1>
+<p class="sub">التعطيل بدل الحذف (يُحفظ سجل العمل). لا أحد يغيّر دوره بنفسه. تغيير الدور أو التعطيل يُنهي جلسات المستخدم فوراً.</p>
+<div class="card"><div class="table-wrap"><table><thead><tr><th>المستخدم</th><th>الدور</th><th>الأقسام</th><th>الحالة</th>{% if has_perm(user, 'admin.users') %}<th>إجراء</th>{% endif %}</tr></thead><tbody>
+{% for u in users %}<tr><td>{{ u.full_name }}<br><span class="ltr small muted">{{ u.username }}</span>{% if u.is_test_account %} <span class="badge">تجريبي</span>{% endif %}</td>
+  <td>{{ ROLE_NAMES[u.role_code] }}</td><td>{{ u.departments or '—' }}</td>
+  <td>{% if u.is_active %}<span class="badge ok">✓ فعّال</span>{% else %}<span class="badge">معطّل</span>{% endif %}</td>
+  {% if has_perm(user, 'admin.users') %}<td>{% if u.id != user.id %}
+    <details><summary>تعديل</summary>
+      <form data-api="/api/admin/users/{{ u.id }}" data-method="PATCH" data-reload class="mt-s">
+        <input type="hidden" name="version" value="{{ u.version }}" data-num>
+        <div class="field"><label>الدور</label><select name="role_code">{% for k, l in ROLE_NAMES.items() %}<option value="{{ k }}" {% if k == u.role_code %}selected{% endif %}>{{ l }}</option>{% endfor %}</select></div>
+        <fieldset class="field"><legend>الأقسام</legend>{% for dp in deps %}<label class="check"><input type="checkbox" name="department_ids" value="{{ dp.id }}" data-multi {% if u.department_ids and dp.id in u.department_ids %}checked{% endif %}> {{ dp.name }}</label>{% endfor %}</fieldset>
+        <label class="check"><input type="checkbox" name="is_active" {% if u.is_active %}checked{% endif %}> فعّال</label>
+        <div class="field"><label>السبب</label><input name="reason"></div><button>حفظ</button></form>
+      <form data-api="/api/admin/users/{{ u.id }}/password" data-success="أُعيد تعيين كلمة المرور" class="mt-s"><div class="field"><label>كلمة مرور مؤقتة جديدة</label><input type="password" name="password" autocomplete="new-password" dir="ltr"></div><button class="warn">إعادة تعيين</button></form>
+    </details>{% else %}<span class="small muted">حسابك</span>{% endif %}</td>{% endif %}</tr>{% endfor %}
+</tbody></table></div></div>
+
+{% if has_perm(user, 'admin.users') %}
+<form class="card" data-api="/api/admin/users" data-reload data-success="أُنشئ الحساب"><h2>حساب جديد</h2><div class="form-row">
+  <div class="field"><label for="nu-u">اسم المستخدم (لاتيني صغير)</label><input id="nu-u" name="username" dir="ltr" required></div>
+  <div class="field"><label for="nu-n">الاسم الكامل</label><input id="nu-n" name="full_name" required></div>
+  <div class="field"><label for="nu-r">الدور</label><select id="nu-r" name="role_code">{% for k, l in ROLE_NAMES.items() %}<option value="{{ k }}">{{ l }}</option>{% endfor %}</select></div>
+  <div class="field"><label for="nu-p">كلمة مرور مؤقتة</label><input id="nu-p" type="password" name="password" dir="ltr" autocomplete="new-password" required></div></div>
+  <fieldset class="field"><legend>الأقسام</legend>{% for dp in deps %}<label class="check"><input type="checkbox" name="department_ids" value="{{ dp.id }}" data-multi> {{ dp.name }}</label>{% endfor %}</fieldset>
+  <button class="primary">إنشاء</button><p class="small muted">يُطلب من المستخدم تغيير كلمة المرور عند أول دخول.</p></form>
+{% endif %}
+
+{% if has_perm(user, 'admin.delegations') %}
+<section class="card"><h2>تفويضات المراجعة والاعتماد</h2>
+  <div class="table-wrap"><table><thead><tr><th>المفوِّض</th><th>المفوَّض</th><th>القسم</th><th>السبب</th><th>الحالة</th><th></th></tr></thead><tbody>
+  {% for dl in delegs %}<tr><td>{{ dl.delegator_name }}</td><td>{{ dl.delegate_name }}</td><td>{{ dl.department_name }}</td><td>{{ dl.reason }}</td>
+    <td>{% if dl.revoked_at %}<span class="badge">أُلغي {{ dl.revoked_at|date }}</span>{% else %}<span class="badge ok">✓ نشط منذ {{ dl.granted_at|date }}</span>{% endif %}</td>
+    <td>{% if not dl.revoked_at %}<form data-api="/api/admin/delegations/{{ dl.id }}/revoke" data-reload class="actions"><input name="reason" placeholder="السبب" required aria-label="سبب الإلغاء"><button class="warn">إلغاء</button></form>{% endif %}</td></tr>
+  {% else %}<tr><td colspan="6" class="empty">لا توجد تفويضات.</td></tr>{% endfor %}</tbody></table></div>
+  <form data-api="/api/admin/delegations" data-reload class="mt-m"><div class="form-row">
+    <div class="field"><label for="dg-u">نائب رئيس القسم</label><select id="dg-u" name="delegate_id">{% for u in users if u.role_code == 'DEPUTY_HEAD' and u.is_active %}<option value="{{ u.id }}">{{ u.full_name }}</option>{% endfor %}</select></div>
+    <div class="field"><label for="dg-d">القسم</label><select id="dg-d" name="department_id">{% for dp in deps %}<option value="{{ dp.id }}">{{ dp.name }}</option>{% endfor %}</select></div>
+    <div class="field"><label for="dg-r">السبب</label><input id="dg-r" name="reason" required></div>
+    <div class="field"><label for="dg-e">ينتهي في (اختياري)</label><input id="dg-e" type="date" name="expires_at"></div></div>
+    <button class="primary">منح التفويض</button></form>
+</section>
+{% endif %}
+{% endblock %}

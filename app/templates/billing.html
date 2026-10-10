@@ -1,0 +1,28 @@
+{% extends "base.html" %}
+{% block title %}المحاسبة{% endblock %}
+{% block content %}
+<div class="crumbs"><a href="/billing">المحاسبة</a> › {{ p.full_name }}</div>
+<h1>الباقة والدفعات</h1>
+<p class="sub">{{ p.full_name }} · <span class="num">{{ p.file_no }}</span> · {{ b.episode.title }} · الجلسات المنفذة: <span class="num">{{ b.sessions_done }}</span></p>
+<div class="notice small">بيانات مالية فقط. لا تظهر هنا أي تفاصيل طبية، ولا يرى المعالج هذه المبالغ.</div>
+{% if b.package %}
+<div class="card"><dl class="kv"><dt>عدد الجلسات المتفق عليها</dt><dd class="num">{{ b.package.sessions_agreed }}</dd>
+  <dt>المبلغ الإجمالي المتفق عليه</dt><dd class="num">{{ '{:,.0f}'.format(b.package.total_amount) }} {{ b.package.currency }}</dd>
+  <dt>إجمالي المدفوع</dt><dd class="num">{{ '{:,.0f}'.format(b.paid) }}</dd><dt>المبلغ المتبقي</dt><dd class="num">{{ '{:,.0f}'.format(b.remaining) }}</dd></dl>
+  <table class="mt-m"><thead><tr><th>الدفعة</th><th>المبلغ</th><th>التاريخ</th></tr></thead><tbody>
+  {% for i in range(1,5) %}{% set pay = b.payments|selectattr('installment_no','equalto',i)|first %}<tr><td>الدفعة {{ i }}</td><td class="num">{{ '{:,.0f}'.format(pay.amount) if pay else '—' }}</td><td>{{ pay.paid_on|date if pay else '—' }}</td></tr>{% endfor %}
+  </tbody></table>
+  {% if b.payments|length < 4 and has_perm(user, 'billing.write') %}
+  <form data-api="/api/episodes/{{ b.episode.id }}/billing/payments" data-reload class="mt-m"><div class="form-row">
+    <div class="field"><label for="py-a">المبلغ</label><input id="py-a" type="number" name="amount" min="1" step="any" required></div>
+    <div class="field"><label for="py-d">التاريخ</label><input id="py-d" type="date" name="paid_on" required></div></div>
+    <button class="primary">تسجيل الدفعة {{ b.payments|length + 1 }}</button></form>{% endif %}
+</div>
+{% elif has_perm(user, 'billing.write') %}
+<form class="card" data-api="/api/episodes/{{ b.episode.id }}/billing/package" data-reload><h2>تسجيل الباقة</h2><div class="form-row">
+  <div class="field"><label for="bp-s">عدد الجلسات المتفق عليها</label><input id="bp-s" type="number" name="sessions_agreed" min="1" max="100" required></div>
+  <div class="field"><label for="bp-t">المبلغ الإجمالي</label><input id="bp-t" type="number" name="total_amount" min="0" step="any" required></div>
+  <div class="field"><label for="bp-c">العملة</label><select id="bp-c" name="currency"><option value="SYP">ليرة سورية</option><option value="USD">دولار</option></select></div></div>
+  <button class="primary">حفظ</button></form>
+{% else %}<p class="empty">لا توجد باقة.</p>{% endif %}
+{% endblock %}

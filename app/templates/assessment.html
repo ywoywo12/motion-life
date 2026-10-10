@@ -1,0 +1,111 @@
+{% extends "base.html" %}
+{% from "macros.html" import qcard, savebar, patient_head, safety_box, sev_badge, ep_tabs %}
+{% block title %}تقييم أسفل الظهر — {{ p.full_name }}{% endblock %}
+{% block content %}
+{{ patient_head(p, ep) }}
+<div class="page-head"><div><h1>تقييم أسفل الظهر</h1>
+  <p class="sub">{{ p.full_name }} · <span class="num">{{ p.file_no }}</span> · {{ p.sex == 'M' and 'ذكر' or 'أنثى' }} · {{ p.birth_date|age }} · {{ ep.title }}</p></div>
+  <div class="actions">{% if v.versions %}<a class="btn" href="/reports/episode/{{ ep.id }}/assessment.pdf">PDF التقييم</a>{% endif %}</div></div>
+{{ ep_tabs(ep, 'assessment') }}
+
+{% if ep.status == 'ON_HOLD' %}<div class="notice danger" role="alert"><h3>⏸ الحلقة معلّقة</h3><p>{{ ep.hold_reason }}</p>
+  {% if user.role_code in ('DIRECTOR','DEPT_HEAD','DEPUTY_HEAD') %}
+  <form data-api="/api/episodes/{{ ep.id }}/resume" data-reload class="actions"><input name="reason" required placeholder="سبب رفع التعليق والمعطيات الطبية الجديدة" class="flex-1" aria-label="سبب رفع التعليق"><button class="warn">رفع التعليق (موثّق)</button></form>
+  {% endif %}</div>{% endif %}
+
+{% set sections = v.questionnaire.sections %}
+{% set steps = [('s1','1. معلومات',['INFO']),('s2','2. السلامة',['SAFETY']),('s3','3. الشكوى والأعراض',['SYMPTOMS','BRANCH_NEURO','BRANCH_STANDING','BRANCH_SURGERY','BRANCH_TRAUMA','IMAGING','FUNCTION']),('s4','4. الفحص والاختبارات',[]),('s5','5. الأهداف والقياس',[]),('s6','6. الملخص',['SUMMARY'])] %}
+<nav aria-label="خطوات التقييم"><ol class="stepper">{% for id, label, secs in steps %}<li><a href="#{{ id }}">{{ label }}{% if secs %} <span class="cnt" data-step-count="{{ secs|join(',') }}"></span>{% endif %}</a></li>{% endfor %}</ol></nav>
+
+<div id="safety-live">{{ safety_box(v.safety) }}</div>
+<div class="card tight actions"><label for="q-source" class="inline">مصدر الإدخال:</label>
+  <select id="q-source" class="flex-1"><option value="THERAPIST_ENTRY">إدخال المعالج أثناء التقييم</option><option value="CLINICIAN_OBSERVED">ملاحظة/فحص سريري</option><option value="PATIENT_REPORTED">نقل من إجابة المريض المكتوبة</option></select></div>
+{{ savebar() }}
+
+<div data-qform data-save-url="{{ save_url }}" data-key="lumbar:{{ ep.id }}" data-ctx="{{ {'sex': p.sex}|j }}">
+{% set by = v.questionnaire.by_code %}
+{% for id, label, secs in steps %}
+<section class="section" id="{{ id }}">
+  <h2>{{ label }}</h2>
+  {% if id == 's2' %}<p class="small muted">كل سؤال سلامة إلزامي ويُسأل صراحةً. «غير معروف/لم يُسأل» يمنع اعتماد السلامة. إجابة المريض المسبقة معروضة للمقارنة فقط.</p>{% endif %}
+  {% for sc in secs %}
+    {% set stitle = (sections|selectattr('code','equalto',sc)|first).title %}
+    <div data-section-wrap {% if sc.startswith('BRANCH') %}data-hide-empty{% endif %}>
+    {% if secs|length > 1 %}<h3 class="mt-m">{{ stitle }}{% if sc.startswith('BRANCH') %} <span class="badge info">مسار متفرّع</span>{% endif %}</h3>{% endif %}
+    {% for q in v.questionnaire.questions if q.section == sc %}
+      {% set prior = None %}
+      {% if q.history_code and v.history.get(q.history_code) %}
+        {% set ha = v.history.get(q.history_code) %}
+        {% set prior = {'q': {'type':'tri','options':[]}, 'a': ha, 'value': ha.value} %}
+      {% endif %}
+      {{ qcard(q, v.answers.get(q.code), v.visible, prior) }}
+    {% endfor %}
+    </div>
+  {% endfor %}
+
+  {% if id == 's4' %}
+  {% include "_exam.html" %}
+  {% endif %}
+
+  {% if id == 's5' %}
+  <div class="grid c2">
+  <div class="card"><h3>أهداف قابلة للقياس</h3>
+    {% if v.goals %}<ul class="timeline">{% for g in v.goals %}<li><b>{{ g.description }}</b><br><span class="small">القياس: {{ g.measure }} · من {{ g.baseline_value or '—' }} إلى {{ g.target_value }} {{ g.unit or '' }}{% if g.target_date %} · بحلول {{ g.target_date|date }}{% endif %} · <span class="badge">{{ GOAL_STATUS[g.status] }}</span></span></li>{% endfor %}</ul>
+    {% else %}<p class="empty">أضف هدفاً واحداً على الأقل.</p>{% endif %}
+    {% set mg = v.history.get('HX_MAIN_GOAL') %}{% if mg and mg.status == 'ANSWERED' %}<p class="small">هدف المريض بكلماته: «{{ mg.value }}»</p>{% endif %}
+    <form data-api="/api/episodes/{{ ep.id }}/goals" data-reload data-success="أُضيف الهدف" class="mt-m">
+      <div class="field"><label for="g-d">الهدف</label><input id="g-d" name="description" required placeholder="مثال: الجلوس 30 دقيقة في العمل دون زيادة الألم"></div>
+      <div class="form-row"><div class="field"><label for="g-m">طريقة القياس</label><input id="g-m" name="measure" required placeholder="زمن الجلوس"></div>
+        <div class="field"><label for="g-b">البداية</label><input id="g-b" name="baseline_value"></div>
+        <div class="field"><label for="g-t">المستهدف</label><input id="g-t" name="target_value" required></div>
+        <div class="field"><label for="g-u">الوحدة</label><input id="g-u" name="unit" placeholder="دقيقة"></div>
+        <div class="field"><label for="g-dt">التاريخ المستهدف</label><input id="g-dt" type="date" name="target_date"></div></div>
+      <button>＋ إضافة هدف</button></form></div>
+
+  <div class="card"><h3>قياسات البداية (للمقارنة بعد الجلسة 6 و12)</h3>
+    {% set base = v.outcomes|selectattr('timepoint','equalto','BASELINE')|list %}
+    {% if base %}<table><tbody>{% for o in base %}<tr><td>{{ v.outcome_catalog[o.measure_code].name_ar }}{% if o.label %} — <b>{{ o.label }}</b>{% endif %}</td><td class="num">{{ o.value_num }} {{ o.unit or '' }}</td></tr>{% endfor %}</tbody></table>
+    {% else %}<p class="empty">لم تُسجّل قياسات بداية.</p>{% endif %}
+    {% set pn = v.answers.get('LB_PAIN_NOW') %}{% if pn and pn.status == 'ANSWERED' %}<p class="small">شدة الألم المسجلة في الأعراض: <span class="num">{{ pn.value }}/10</span></p>{% endif %}
+    <form data-api="/api/episodes/{{ ep.id }}/outcomes" data-reload data-extra='{"timepoint":"BASELINE"}' class="mt-m">
+      <div class="form-row"><div class="field"><label for="o-m">المقياس</label><select id="o-m" name="measure_code" required>
+        {% for c, o in v.outcome_catalog.items() %}<option value="{{ c }}" {% if not o.enabled %}disabled{% endif %}>{{ o.name_ar }}{% if not o.enabled %} (غير مفعّل — يتطلب ترخيصاً){% endif %}</option>{% endfor %}</select></div>
+        <div class="field"><label for="o-l">اسم النشاط (للأنشطة الخاصة بالمريض)</label><input id="o-l" name="label" placeholder="مثال: الجلوس في العمل"></div>
+        <div class="field"><label for="o-v">القيمة</label><input id="o-v" name="value" type="number" step="any" required></div></div>
+      <button>تسجيل قياس البداية</button></form></div>
+  </div>
+  {% endif %}
+
+  {% if id == 's6' %}
+  {% if v.alerts %}<div class="card"><h3>تنبيهات السلامة المفتوحة</h3>
+    {% for a in v.alerts %}<div class="item-row">{{ sev_badge(a.severity) }} <b>{{ a.message }}</b>
+      <span class="badge {{ 'ok' if a.status == 'ACKNOWLEDGED' else 'warn' }}">{{ 'أقرّ بها مراجع' if a.status == 'ACKNOWLEDGED' else 'لم يُقرّ بها مراجع' }}</span>
+      {% if a.acks %}<ul class="small">{% for k in a.acks %}<li>{{ k.user }}: {{ k.note }}</li>{% endfor %}</ul>{% endif %}
+      <form data-api="/api/alerts/{{ a.id }}/ack" data-reload class="actions mt-s"><input name="note" required placeholder="ما الذي رُوجع وما القرار؟" class="flex-1" aria-label="ملاحظة الإقرار"><button>تسجيل إقرار/ملاحظة</button></form></div>{% endfor %}
+    <p class="small muted">إقرار رئيس القسم أو المدير شرط لاعتماد أي خطة. إقرار المعالج يُسجَّل كملاحظة.</p></div>{% endif %}
+
+  <div class="card"><h3>قرار الإحالة الطبية</h3>
+    {% for r in v.referrals %}<p><span class="badge {{ 'danger' if r.urgency == 'EMERGENCY' else 'warn' }}">{{ {'EMERGENCY':'⛔ إسعافية','URGENT':'⚠ عاجلة','ROUTINE':'روتينية'}[r.urgency] }}</span> إلى {{ r.destination }} — {{ r.reason }}<br><span class="small muted">قرره {{ r.decided_by_name }} · {{ r.decided_at|dt }}{% if r.patient_informed %} · أُبلغ المريض{% endif %}</span></p>{% endfor %}
+    <form data-api="/api/episodes/{{ ep.id }}/referrals" data-reload data-success="سُجّل قرار الإحالة">
+      <div class="form-row"><div class="field"><label for="rf-u">الإلحاح</label><select id="rf-u" name="urgency"><option value="EMERGENCY">إسعافية فورية</option><option value="URGENT">عاجلة</option><option value="ROUTINE">روتينية</option></select></div>
+        <div class="field"><label for="rf-d">الجهة</label><input id="rf-d" name="destination" required placeholder="قسم الإسعاف / طبيب العظمية / ..."></div></div>
+      <div class="field"><label for="rf-r">السبب</label><textarea id="rf-r" name="reason" required></textarea></div>
+      <label class="check"><input type="checkbox" name="patient_informed"> أُبلغ المريض/المرافق بالإحالة وسببها</label>
+      <button class="mt-s">تسجيل القرار (باسمك ووقته)</button></form></div>
+
+  <div class="card"><h3>إنهاء التقييم وإنشاء إصدار</h3>
+    {% if v.blockers %}<div class="notice warn"><h3>◌ متطلبات قبل الإنهاء</h3><ul>{% for b in v.blockers %}<li>{{ b }}</li>{% endfor %}</ul></div>
+    {% elif v.assessment.status == 'FINALIZED' %}<div class="notice ok">✓ التقييم منتهٍ (إصدار {{ v.assessment.current_version }}). أي تعديل لاحق يعيده «قيد الإنجاز» ويتطلب إصداراً جديداً.</div>
+    {% else %}<div class="notice ok">✓ المتطلبات مكتملة.</div>{% endif %}
+    <form data-api="/api/episodes/{{ ep.id }}/assessment/finalize" data-reload data-success="أُنشئ إصدار التقييم">
+      <div class="field"><label for="fn-n">ملاحظة الإصدار</label><input id="fn-n" name="note" placeholder="تقييم أولي / إعادة تقييم بعد ..."></div>
+      <button class="primary" {% if v.blockers %}disabled{% endif %}>إنهاء التقييم (إصدار {{ v.assessment.current_version + 1 }})</button>
+      {% if v.assessment.status == 'FINALIZED' %}<a class="btn" href="/episodes/{{ ep.id }}/plan">الانتقال للخطة ←</a>{% endif %}</form>
+    {% if v.versions %}<h3 class="mt-m">إصدارات التقييم</h3><ul class="timeline">{% for x in v.versions %}<li>الإصدار {{ x.version_no }} · {{ x.created_by_name }} · {{ x.created_at|dt }}{% if x.note %} — {{ x.note }}{% endif %}</li>{% endfor %}</ul>{% endif %}
+  </div>
+  {% endif %}
+</section>
+{% endfor %}
+</div>
+{% endblock %}
+{% block scripts %}<script src="/static/js/questionnaire.js" defer></script><script src="/static/js/exam.js" defer></script>{% endblock %}

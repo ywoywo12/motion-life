@@ -1,0 +1,14 @@
+{% extends "base.html" %}
+{% block title %}حسابي{% endblock %}
+{% block content %}
+<h1>حسابي</h1>
+{% if request.args.get('first') %}<div class="notice warn">⚠ يجب تغيير كلمة المرور المؤقتة قبل المتابعة.</div>{% endif %}
+<div class="card mw-520">
+  <h2>تغيير كلمة المرور</h2>
+  <form data-api="/api/auth/password" data-redirect="/dashboard" data-success="تم تغيير كلمة المرور">
+    <div class="field"><label for="cur">كلمة المرور الحالية</label><input id="cur" type="password" name="current" autocomplete="current-password" dir="ltr" required></div>
+    <div class="field"><label for="new">كلمة المرور الجديدة <span class="hint">10 أحرف على الأقل مع حرف كبير ورقم</span></label><input id="new" type="password" name="new" autocomplete="new-password" dir="ltr" required></div>
+    <button class="primary">حفظ</button>
+  </form>
+</div>
+{% endblock %}

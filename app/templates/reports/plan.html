@@ -1,0 +1,22 @@
+{% extends "reports/base.html" %}
+{% block body %}
+{% set c = pv.content %}
+<div class="box"><b>الإصدار <span class="num">{{ pv.version_no }}</span></b> — الحالة: {% if pv.status == 'APPROVED' %}<span class="ok">✓ معتمدة</span>{% else %}<span class="flag">{{ PLAN_STATUS[pv.status] }}</span>{% endif %}
+  · مبنية على إصدار التقييم {{ av.version_no if av else '—' }}<br>
+  كتبها: <b>{{ author.full_name }}</b> · {% if approver %}اعتمدها: <b>{{ approver.full_name }}</b> ({{ ROLE_NAMES[approver.role_code] }}) في {{ pv.approved_at|dt }}{% else %}<span class="flag">غير معتمدة</span>{% endif %}</div>
+<h2>التشخيص الوظيفي والانطباع السريري</h2>
+<table class="qa"><tbody><tr><td>الانطباع</td><td>{{ c.impression }}</td></tr><tr><td>درجة اليقين</td><td>{{ CERTAINTY.get(c.certainty, '—') }}</td></tr>
+  <tr><td>المبررات</td><td>{{ c.rationale or '—' }}</td></tr><tr><td>البدائل</td><td>{{ c.alternatives or '—' }}</td></tr>
+  <tr><td>عدد الجلسات المخطط / أسبوعياً</td><td class="num">{{ c.sessions_planned }} / {{ c.frequency_per_week or '—' }}</td></tr>
+  <tr><td>إعادة التقييم</td><td>{{ c.reassessment }}</td></tr><tr><td>المراحل</td><td>{{ c.phases_note or '—' }}</td></tr><tr><td>احتياطات عامة</td><td>{{ c.general_precautions or '—' }}</td></tr></tbody></table>
+<h2>الأهداف</h2>
+<table><thead><tr><th>الهدف</th><th>القياس</th><th>البداية ← المستهدف</th></tr></thead><tbody>{% for g in goals if not c.goal_ids or g.id in c.goal_ids %}<tr><td>{{ g.description }}</td><td>{{ g.measure }}</td><td>{{ g.baseline_value or '—' }} ← {{ g.target_value }} {{ g.unit or '' }}</td></tr>{% endfor %}</tbody></table>
+<h2>البنود العلاجية</h2>
+<table><thead><tr><th>الفئة</th><th>البند</th><th>الهدف</th><th>الجرعة/المعايير</th><th>الاحتياطات / التقدم / التوقف</th><th>المرحلة</th></tr></thead><tbody>
+{% for it in items %}<tr><td>{{ CATEGORY_LABELS[it.category] }}</td><td>{% if it.svg %}<div class="fig-s">{{ it.svg|safe }}</div>{% endif %}{{ it.title }}{% if it.equipment_code %}<br><span class="small">{{ equipment[it.equipment_code].name }}</span>{% endif %}{% if it.program_label %}<br><span class="small">برنامج الجهاز: {{ it.program_label }}</span>{% endif %}{% if it.method %}<br><span class="small muted">{{ it.method }}</span>{% endif %}</td>
+  <td>{{ it.target or '—' }}</td><td>{{ it.dosage or '—' }}</td><td class="small">{{ it.precautions or '' }}{% if it.progression_criteria %}<br>تقدم: {{ it.progression_criteria }}{% endif %}{% if it.stop_criteria %}<br>توقف: {{ it.stop_criteria }}{% endif %}{% if it.category == 'DEVICE' %}<br>{{ '✓ رُوجعت الموانع حسب تعليمات الشركة' if it.contraindications_reviewed else 'لم تُؤكد مراجعة الموانع' }}{% endif %}</td><td class="num">{{ it.phase or '—' }}</td></tr>{% endfor %}
+</tbody></table>
+<h2>سجل القرارات على هذا الإصدار</h2>
+<table><thead><tr><th>الإجراء</th><th>بواسطة</th><th>التاريخ</th><th>التعليق</th></tr></thead><tbody>{% for dcs in decisions %}<tr><td>{{ ACTION_LABELS[dcs.action] }}</td><td>{{ dcs.actor_name }} ({{ ROLE_NAMES[dcs.actor_role] }})</td><td class="num">{{ dcs.at|ndate }}</td><td>{{ dcs.comment or '' }}</td></tr>{% endfor %}</tbody></table>
+<div class="sign"><div>المعالج (كاتب الخطة): {{ author.full_name }}</div><div>المعتمِد: {{ approver.full_name if approver else '—' }}{% if approver %} · <span class="num">{{ pv.approved_at|ndate }}</span>{% endif %}</div></div>
+{% endblock %}

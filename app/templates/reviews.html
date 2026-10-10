@@ -1,0 +1,14 @@
+{% extends "base.html" %}
+{% from "macros.html" import safety_badge, plan_badge %}
+{% block title %}المراجعات{% endblock %}
+{% block content %}
+<h1>طابور المراجعة والاعتماد</h1>
+<p class="sub">المصعّدة أولاً، ثم الحالات التي تحتاج مراجعة سلامة. تظهر حالات أقسامك فقط{% if user.role_code == 'DEPUTY_HEAD' %}، والقرار يتطلب تفويضاً نشطاً{% endif %}.</p>
+<div class="card"><div class="table-wrap"><table><thead><tr><th>المريض</th><th>المشكلة</th><th>الإصدار</th><th>الحالة</th><th>السلامة والتنبيهات</th><th>الكاتب</th><th>أُرسلت</th><th></th></tr></thead><tbody>
+{% for r in queue %}<tr><td>{{ r.patient_name }}<br><span class="num small muted">{{ r.file_no }}</span></td><td>{{ r.title }}</td><td class="num">v{{ r.version_no }}</td><td>{{ plan_badge(r.status) }}</td>
+  <td>{{ safety_badge(r.safety_status) }}{% if r.open_alerts %}<br><span class="badge warn">⚠ {{ r.open_alerts }} تنبيه غير مُقرّ</span>{% endif %}</td>
+  <td>{{ r.author_name }}{% if r.author_id == user.id %}<br><span class="badge">كتبتَها أنت — لا يمكنك اعتمادها</span>{% endif %}</td>
+  <td class="small">{{ r.submitted_at|dt }}</td><td><a class="btn {{ 'btn-primary' if r.can_decide else '' }}" href="/reviews/{{ r.id }}">{{ 'مراجعة' if r.can_decide else 'عرض' }}</a></td></tr>
+{% else %}<tr><td colspan="8" class="empty">لا توجد خطط بانتظار المراجعة.</td></tr>{% endfor %}
+</tbody></table></div></div>
+{% endblock %}

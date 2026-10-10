@@ -1,0 +1,62 @@
+{% extends "base.html" %}
+{% from "macros.html" import qcard, savebar, patient_head, safety_badge %}
+{% block title %}التاريخ الطبي — {{ p.full_name }}{% endblock %}
+{% block content %}
+{{ patient_head(p) }}
+<div class="page-head"><div><h1>استبيان التاريخ الطبي والتقييم الأولي</h1>
+  <p class="sub">{{ p.full_name }} · <span class="num">{{ p.file_no }}</span> · إصدار الاستبيان {{ qn.version }}</p></div>
+  <div class="actions"><a class="btn" href="/reports/patient/{{ p.id }}/history.pdf">PDF</a></div></div>
+
+<div class="notice small">كل سؤال يبدأ بحالة «لم يُسأل». الفراغ لا يُعتبر «لا». كل إجابة تُحفظ فوراً على الخادم مع اسمك ووقت التسجيل، ويُحتفظ بالقيم السابقة.
+  أسئلة السلامة هنا هي <b>إجابة المريض المسبقة</b>، ويؤكدها المعالج لكل حلقة في خطوة السلامة.</div>
+{% if safety_rows %}<p class="small">فرز السلامة في الحلقات المفتوحة: {% for s in safety_rows %}{{ s.title }}: {{ safety_badge(s.status) }} {% endfor %}</p>{% endif %}
+
+<div class="card tight actions">
+  <label for="q-source" class="inline">مصدر الإدخال:</label>
+  <select id="q-source" class="flex-1"><option value="THERAPIST_ENTRY">إدخال الفريق أثناء المقابلة</option><option value="PATIENT_REPORTED">نقل من استبيان المريض الورقي</option></select>
+</div>
+{{ savebar() }}
+
+<nav aria-label="أقسام الاستبيان"><ol class="stepper">{% for s in qn.sections %}<li><a href="#sec-{{ s.code }}">{{ loop.index }}. {{ s.title }} <span class="cnt" data-step-count="{{ s.code }}"></span></a></li>{% endfor %}</ol></nav>
+
+<div data-qform data-save-url="{{ save_url }}" data-key="history:{{ p.id }}" data-ctx="{{ {'sex': p.sex}|j }}">
+{% for s in qn.sections %}
+<section class="section" id="sec-{{ s.code }}" data-section-wrap {% if s.code == 'H12' %}data-hide-empty{% endif %}>
+  <h2>{{ loop.index }}. {{ s.title }}</h2>
+  {% for q in qn.questions if q.section == s.code %}{{ qcard(q, answers.get(q.code), visible) }}{% endfor %}
+
+  {% if s.code == 'H6' %}
+  <div class="card tight"><h3>جدول العمليات</h3>
+    {% set rows = entries|selectattr('entry_type', 'equalto', 'SURGERY')|list %}
+    {% if rows %}<table><thead><tr><th>العملية/المنطقة</th><th>السنة</th><th>ملاحظات</th><th></th></tr></thead><tbody>
+    {% for e in rows %}<tr><td>{{ e.data.procedure }}</td><td class="num">{{ e.data.year or '—' }}</td><td>{{ e.data.notes or '' }}</td>
+      <td><form data-api="/api/patients/{{ p.id }}/history/entries/{{ e.id }}/remove" data-reload class="actions"><input name="reason" placeholder="سبب الإزالة" required aria-label="سبب الإزالة"><button class="link">إزالة</button></form></td></tr>{% endfor %}
+    </tbody></table>{% endif %}
+    <form data-api="/api/patients/{{ p.id }}/history/entries" data-reload data-extra='{"entry_type":"SURGERY"}' class="mt-s">
+      <div class="form-row"><input name="procedure" placeholder="العملية/المنطقة" required aria-label="العملية/المنطقة"><input name="year" type="number" min="1900" max="2100" placeholder="السنة" aria-label="السنة"><input name="notes" placeholder="ملاحظات" aria-label="ملاحظات"></div>
+      <button class="mt-s">＋ إضافة عملية</button></form></div>
+  {% endif %}
+  {% if s.code == 'H7' %}
+  <div class="card tight"><h3>جدول الأدوية</h3>
+    {% set rows = entries|selectattr('entry_type', 'equalto', 'MEDICATION')|list %}
+    {% if rows %}<table><thead><tr><th>اسم الدواء</th><th>الجرعة</th><th>السبب</th><th></th></tr></thead><tbody>
+    {% for e in rows %}<tr><td>{{ e.data.name }}</td><td>{{ e.data.dose or '' }}</td><td>{{ e.data.reason or '' }}</td>
+      <td><form data-api="/api/patients/{{ p.id }}/history/entries/{{ e.id }}/remove" data-reload class="actions"><input name="reason" placeholder="سبب الإزالة" required aria-label="سبب الإزالة"><button class="link">إزالة</button></form></td></tr>{% endfor %}
+    </tbody></table>{% endif %}
+    <form data-api="/api/patients/{{ p.id }}/history/entries" data-reload data-extra='{"entry_type":"MEDICATION"}' class="mt-s">
+      <div class="form-row"><input name="name" placeholder="اسم الدواء" required aria-label="اسم الدواء"><input name="dose" placeholder="الجرعة" aria-label="الجرعة"><input name="reason" placeholder="السبب" aria-label="السبب"></div>
+      <button class="mt-s">＋ إضافة دواء</button></form></div>
+  {% endif %}
+</section>
+{% endfor %}
+</div>
+
+<section class="card"><h2>تأكيد مراجعة الاستبيان من الفريق</h2>
+  {% if review %}<p><span class="badge ok">✓ آخر مراجعة</span> {{ review.reviewed_by }} · {{ review.reviewed_at|dt }}{% if review.note %} — {{ review.note }}{% endif %}</p>{% endif %}
+  <form data-api="/api/patients/{{ p.id }}/history/review" data-reload data-success="سُجّلت المراجعة">
+    <div class="field"><label for="rv-n">ملاحظة المراجعة</label><input id="rv-n" name="note"></div>
+    <button class="primary">تأكيد أنني راجعت الاستبيان</button>
+    <p class="small muted">يُسجَّل اسم المراجع وتاريخ ووقت المراجعة تلقائياً (قسم «خاص بالفريق الطبي» في النموذج الورقي).</p>
+  </form></section>
+{% endblock %}
+{% block scripts %}<script src="/static/js/questionnaire.js" defer></script>{% endblock %}

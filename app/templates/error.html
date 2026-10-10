@@ -1,0 +1,10 @@
+{% extends "base.html" %}
+{% block title %}خطأ{% endblock %}
+{% block content %}
+<div class="notice {% if error.status >= 500 %}danger{% else %}warn{% endif %}" role="alert">
+  <h3>{% if error.status == 403 %}⛔ غير مسموح{% elif error.status == 404 %}◌ غير موجود{% else %}⚠ تعذّر إكمال الطلب{% endif %}</h3>
+  <p>{{ error.message }}</p>
+  {% if error.details and error.details.blockers %}<ul>{% for b in error.details.blockers %}<li>{{ b }}</li>{% endfor %}</ul>{% endif %}
+</div>
+<a class="btn" href="/dashboard">العودة للوحة العمل</a>
+{% endblock %}

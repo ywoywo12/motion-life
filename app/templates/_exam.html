@@ -1,0 +1,72 @@
+{# Exam step: test library with safety gating; every test documents result or reason not done. #}
+{% set results = v.exam_results %}
+<div class="card"><h3>النتائج المسجلة</h3>
+  {% if results %}<div class="table-wrap"><table><thead><tr><th>الاختبار</th><th>الجهة</th><th>النتيجة</th><th>القيمة/التفاصيل</th><th class="hide-sm">المسجِّل</th></tr></thead><tbody>
+  {% for r in results %}{% set base = r.test_code.split(':')[0] %}{% set t = v.tests.get(base) %}
+    <tr><td>{{ t.name_ar if t else r.test_code }}{% if ':' in r.test_code %} — {{ r.test_code.split(':')[1] }}{% endif %}</td>
+      <td>{{ SIDE_LABELS[r.side] }}</td>
+      <td><span class="badge {{ {'POSITIVE':'warn','NEGATIVE':'ok','INCONCLUSIVE':'','NOT_DONE':''}.get(r.result,'info') }}">{{ RESULT_LABELS[r.result] }}</span></td>
+      <td class="small">{% if r.value_num is not none %}<span class="num">{{ r.value_num }}</span> {{ r.unit or '' }} {% endif %}
+        {% if r.value_text %}{{ SENSORY_LABELS.get(r.value_text) if base == 'NEURO_DERMATOMES' else (REFLEX_LABELS.get(r.value_text) if base == 'NEURO_REFLEXES' else r.value_text) }}{% endif %}
+        {% if r.details.reproduces_familiar %} · يعيد إنتاج الأعراض المألوفة{% endif %}
+        {% if r.details.symptoms %} · {{ r.details.symptoms }}{% endif %}
+        {% if r.details.movement %}{{ r.details.movement }} ×{{ r.details.reps }}: قبل «{{ r.details.before }}» ← بعد «{{ r.details.after }}» = {{ REPEATED_RESPONSES[r.details.response] }}{% endif %}
+        {% if r.not_done_reason %}السبب: {{ r.not_done_reason }}{% endif %}{% if r.notes %} · {{ r.notes }}{% endif %}
+        {% if r.amended_reason %}<br><span class="badge warn">عُدّلت: {{ r.amended_reason }}</span>{% endif %}</td>
+      <td class="small hide-sm">{{ r.recorded_by_name }}<br>{{ r.recorded_at|dt }}</td></tr>{% endfor %}
+  </tbody></table></div>{% else %}<p class="empty">لا توجد نتائج بعد.</p>{% endif %}
+</div>
+
+{% for rec in v.recommended|sort(attribute='recommended', reverse=True) %}
+{% set t = v.tests[rec.code] %}
+<details class="card tight test-card {% if rec.gate %}blocked{% endif %}" {% if rec.recommended and not rec.gate %}open{% endif %}>
+  <summary><b>{{ t.name_ar }}</b> <span class="muted small ltr">{{ t.name_en }}</span>
+    {% if rec.recommended %}<span class="badge info">★ مستطب حسب الإجابات</span>{% endif %}
+    {% if t.provocative %}<span class="badge">اختبار استفزازي</span>{% endif %}
+    {% if rec.gate %}<span class="badge danger">⛔ محجوب</span>{% endif %}</summary>
+  <div class="inner">
+    {% if rec.gate %}<div class="notice danger small">⛔ {{ rec.gate }} — يمكن فقط تسجيل «لم يُجرَ» مع السبب.</div>{% endif %}
+    <dl class="kv small">
+      <dt>الاستطباب</dt><dd>{{ t.indication }}</dd><dt>شروط الأمان</dt><dd>{{ t.safety }}</dd>
+      <dt>الوضعية</dt><dd>{{ t.position }}</dd><dt>الخطوات</dt><dd>{{ t.steps }}</dd>
+      <dt>معيار النتيجة</dt><dd>{{ t.positive }}</dd><dt>حدود التفسير</dt><dd>{{ t.limits }}</dd>
+    </dl>
+    <p class="small muted">{{ t.review_note }} · إصدار الكتالوج {{ t.catalog_version }}</p>
+
+    {% if t.sublevels %}
+    {% set opts = {'grade': ['0','1','2','3','4','5','NT'], 'sensory': ['NORMAL','REDUCED','ABSENT','INCREASED','NT'], 'reflex': ['NORMAL','REDUCED','ABSENT','BRISK','NT']}[t.result_type] %}
+    {% set lbl = {'grade': {'NT':'لم يُفحص'}, 'sensory': SENSORY_LABELS, 'reflex': REFLEX_LABELS}[t.result_type] %}
+    <table class="mt-s"><thead><tr><th>المستوى</th><th>يمين</th><th>يسار</th></tr></thead><tbody>
+    {% for lv, name in t.sublevels %}<tr><td>{{ lv }} — {{ name }}</td>
+      {% for side in ['RIGHT','LEFT'] %}{% set cur = (results|selectattr('test_code','equalto', rec.code ~ ':' ~ lv)|selectattr('side','equalto',side)|first) %}
+      <td><select data-exam-cell data-url="/api/episodes/{{ ep.id }}/exam" data-test="{{ rec.code }}:{{ lv }}" data-side="{{ side }}" {% if cur %}data-saved="1"{% endif %} {% if rec.gate %}disabled{% endif %} aria-label="{{ name }} {{ SIDE_LABELS[side] }}">
+        <option value="">—</option>{% for o in opts %}<option value="{{ o }}" {% if cur and cur.value_text == o %}selected{% endif %}>{{ lbl.get(o, o) }}</option>{% endfor %}</select></td>{% endfor %}</tr>{% endfor %}
+    </tbody></table>
+    <p class="small muted">كل خلية تُحفظ فور اختيارها. وثّق كل مستوى (أو «لم يُفحص»)؛ لا تُختزل النتيجة بكلمة «طبيعي».</p>
+    {% else %}
+    <form data-api="/api/episodes/{{ ep.id }}/exam" data-reload data-extra='{{ {"test_code": rec.code}|j }}' data-success="سُجّلت النتيجة" class="mt-s">
+      <div class="form-row">
+      {% if t.sides %}<div class="field"><label>الجهة</label><select name="side" required><option value="RIGHT">يمين</option><option value="LEFT">يسار</option><option value="BILATERAL">الجهتان</option></select></div>{% endif %}
+      <div class="field"><label>النتيجة</label><select name="result" required>
+        {% if t.result_type == 'posneg' and not rec.gate %}<option value="POSITIVE">إيجابي</option><option value="NEGATIVE">سلبي</option><option value="INCONCLUSIVE">غير حاسم</option>
+        {% elif not rec.gate %}<option value="RECORDED">تسجيل القيمة/الوصف</option>{% endif %}
+        <option value="NOT_DONE">لم يُجرَ</option></select></div>
+      {% if t.result_type in ('posneg','rom','value') %}<div class="field"><label>{{ 'الزاوية عند ظهور الأعراض' if t.result_type == 'posneg' else 'القيمة' }} {% if t.unit %}({{ t.unit }}){% endif %}</label><input type="number" step="any" name="value_num"></div>{% endif %}
+      {% if t.result_type in ('rom','value') %}<div class="field"><label>وصف/الأعراض المرافقة</label><input name="symptoms"></div>{% endif %}
+      {% if t.result_type in ('rom','text','value') %}<div class="field"><label>الوصف</label><input name="value_text"></div>{% endif %}
+      </div>
+      {% if t.result_type == 'posneg' %}<label class="check"><input type="checkbox" name="reproduces_familiar"> أعاد إنتاج الأعراض المألوفة للمريض</label>{% endif %}
+      {% if t.result_type == 'repeated' %}<div class="form-row">
+        <div class="field"><label>الحركة المستخدمة</label><input name="movement" placeholder="انثناء متكرر وقوفاً"></div>
+        <div class="field"><label>التكرارات</label><input type="number" name="reps" min="1" max="100"></div>
+        <div class="field"><label>الأعراض قبل</label><input name="before"></div>
+        <div class="field"><label>الأعراض بعد</label><input name="after"></div>
+        <div class="field"><label>الاستجابة</label><select name="response">{% for k, l in REPEATED_RESPONSES.items() %}<option value="{{ k }}">{{ l }}</option>{% endfor %}</select></div></div>{% endif %}
+      <div class="form-row"><div class="field"><label>سبب عدم الإجراء (إن لم يُجرَ)</label><input name="not_done_reason"></div>
+        <div class="field"><label>ملاحظات</label><input name="notes"></div>
+        <div class="field"><label>سبب التعديل (عند تعديل نتيجة سابقة)</label><input name="amend_reason"></div></div>
+      <button>حفظ النتيجة</button></form>
+    {% endif %}
+  </div>
+</details>
+{% endfor %}

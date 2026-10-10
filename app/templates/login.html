@@ -1,0 +1,17 @@
+{% extends "base.html" %}
+{% block title %}تسجيل الدخول{% endblock %}
+{% block content %}
+<div class="login-wrap">
+  <form class="login-card" id="login-form" novalidate data-next="{{ next }}">
+    <div class="brand mb-l"><b>MOTION LIFE</b><small>مركز العلاج الفيزيائي وإعادة التأهيل · الحركة تبدأ من هنا</small></div>
+    <h1 class="h-small">تسجيل الدخول</h1>
+    <div class="form-errors" aria-live="assertive"></div>
+    <div class="field"><label for="username">اسم المستخدم</label><input id="username" name="username" type="text" autocomplete="username" required dir="ltr" autofocus></div>
+    <div class="field"><label for="password">كلمة المرور</label><input id="password" name="password" type="password" autocomplete="current-password" required dir="ltr"></div>
+    <button class="primary w-full" type="submit">دخول</button>
+    <p class="small muted mt-m">نسيت كلمة المرور؟ يعيد مسؤول النظام تعيينها بعد التحقق من هويتك شخصياً، ولا تُرسل كلمات المرور عبر الرسائل.
+      يُقفل الحساب مؤقتاً بعد عدة محاولات فاشلة.</p>
+  </form>
+</div>
+{% endblock %}
+{% block scripts %}<script src="/static/js/login.js" defer></script>{% endblock %}

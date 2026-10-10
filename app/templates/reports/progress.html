@@ -1,0 +1,15 @@
+{% extends "reports/base.html" %}
+{% block body %}
+<p class="small">عدد الجلسات المنفذة حتى تاريخه: <span class="num">{{ session_count }}</span></p>
+<h2>مقارنة القياسات</h2>
+<table><thead><tr><th>المقياس</th><th>البداية</th><th>بعد الجلسة 6</th><th>بعد الجلسة 12</th><th>عند الإنهاء</th><th>التغير</th></tr></thead><tbody>
+{% for t in table %}<tr><td>{{ t.name }}{% if t.label %} — <b>{{ t.label }}</b>{% endif %} ({{ t.unit or '' }})</td>
+  {% for tp in ['BASELINE','S6','S12','DISCHARGE'] %}<td class="num">{{ t['values'][tp] if tp in t['values'] else '—' }}</td>{% endfor %}
+  <td class="small">{% for tp, ch in (t.change or {}).items() %}{{ TIMEPOINTS[tp] }}: <span class="num">{{ ch.diff }}</span> ({{ 'تحسن' if ch.improved else ('تراجع' if ch.improved == false else 'دون تغير') }}){% if not loop.last %}<br>{% endif %}{% endfor %}</td></tr>
+{% else %}<tr><td colspan="6">لا توجد قياسات</td></tr>{% endfor %}</tbody></table>
+<p class="small muted">انخفاض الألم وحده لا يساوي نجاح التأهيل الكامل؛ تُقرأ المقاييس الوظيفية وأهداف المريض معاً.</p>
+<h2>الأهداف</h2>
+<table><thead><tr><th>الهدف</th><th>البداية ← المستهدف</th><th>الحالة</th></tr></thead><tbody>{% for g in goals %}<tr><td>{{ g.description }}</td><td>{{ g.baseline_value or '—' }} ← {{ g.target_value }} {{ g.unit or '' }}</td><td>{{ GOAL_STATUS[g.status] }}</td></tr>{% endfor %}</tbody></table>
+<h2>مراجعات التطور</h2>
+{% for r in reviews %}<div class="box"><b>{{ {'S6':'بعد الجلسة 6','S12':'بعد الجلسة 12','AD_HOC':'عند الحاجة','DISCHARGE':'عند الإنهاء'}[r.milestone] }}</b> (بعد <span class="num">{{ r.after_session_no }}</span> جلسة) — {{ r.created_by_name }} · <span class="num">{{ r.created_at|ndate }}</span><br>{{ r.summary }}</div>{% else %}<p class="muted">لا توجد مراجعات بعد.</p>{% endfor %}
+{% endblock %}

@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+{% block title %}الكتالوجات{% endblock %}
+{% block content %}
+<h1>الكتالوجات (الاختبارات، الأجهزة، المقاييس)</h1>
+<div class="notice warn">⚠ المحتوى الأولي كتبه المطوّر بصورة محافظة، ويجب أن يراجعه ويعيد نشره مختص مخوّل في المركز قبل الاستخدام الفعلي.
+  التعديلات تُقترح كمسودة إصدار جديد، وينشرها مراجع غير كاتبها. الإصدارات القديمة تبقى مرتبطة بالنتائج المسجلة عليها.</div>
+{% for kind, title in [('EQUIPMENT','الأجهزة (أسماء فقط — بلا بروتوكولات)'),('TEST','مكتبة الفحص'),('OUTCOME','المقاييس')] %}
+<section class="card"><h2>{{ title }}</h2><div class="table-wrap"><table><thead><tr><th>الرمز</th><th>الاسم</th><th>الإصدار</th><th>الحالة</th><th>ملاحظة المراجعة</th><th></th></tr></thead><tbody>
+{% for r in rows if r.kind == kind %}<tr><td class="ltr small">{{ r.code }}</td><td>{{ r.data.name or r.data.name_ar }}{% if kind == 'EQUIPMENT' %}<br><span class="small muted">{{ r.data.status_note }} — {{ r.data.info }}</span>{% endif %}{% if kind == 'OUTCOME' and not r.data.enabled %}<br><span class="badge">غير مفعّل: {{ r.data.note }}</span>{% endif %}</td>
+  <td class="num">{{ r.version }}</td><td>{% if r.status == 'PUBLISHED' %}<span class="badge ok">منشور</span>{% else %}<span class="badge warn">مسودة — {{ r.created_by_name }}</span>{% endif %}</td>
+  <td class="small">{{ r.review_note or '' }}</td>
+  <td>{% if r.status == 'DRAFT' and has_perm(user, 'admin.catalogs.publish') %}<form data-api="/api/admin/catalogs/{{ r.id }}/publish" data-reload><button class="primary">نشر</button></form>
+      {% elif r.status == 'PUBLISHED' and has_perm(user, 'admin.catalogs.propose') %}
+      <details><summary>اقتراح تعديل</summary><form data-api="/api/admin/catalogs/{{ kind }}/{{ r.code }}/propose" data-reload class="mt-s">
+        {% if kind == 'EQUIPMENT' %}<div class="field"><label>حالة المعلومات</label><input name="status_note" value="{{ r.data.status_note }}"></div><div class="field"><label>معلومات</label><textarea name="info">{{ r.data.info }}</textarea></div>
+        {% elif kind == 'TEST' %}{% for f, l in [('indication','الاستطباب'),('safety','شروط الأمان'),('steps','الخطوات'),('positive','معيار النتيجة'),('limits','حدود التفسير')] %}<div class="field"><label>{{ l }}</label><textarea name="{{ f }}">{{ r.data[f] }}</textarea></div>{% endfor %}
+        {% else %}<label class="check"><input type="checkbox" name="enabled" {% if r.data.enabled %}checked{% endif %}> مفعّل (فقط بعد توفر ترخيص الاستخدام والنسخة العربية المصادق عليها)</label><div class="field"><label>ملاحظة</label><input name="note" value="{{ r.data.note or '' }}"></div>{% endif %}
+        <div class="field"><label>سبب/مرجع التعديل</label><input name="review_note"></div><button>إرسال كمسودة</button></form></details>{% endif %}</td></tr>
+{% endfor %}</tbody></table></div></section>
+{% endfor %}
+<section class="card"><h2>البروتوكولات</h2><p class="empty">لا توجد بروتوكولات معتمدة. البنية جاهزة لإصدارات بروتوكولات تُنشر بعد مراجعة اختصاصية (مؤجل).</p></section>
+{% endblock %}

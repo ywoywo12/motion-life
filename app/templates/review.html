@@ -1,0 +1,82 @@
+{% extends "base.html" %}
+{% from "macros.html" import patient_head, plan_badge, safety_box, sev_badge %}
+{% block title %}مراجعة خطة — {{ p.full_name }}{% endblock %}
+{% block content %}
+{% set pv = r.version %}
+{{ patient_head(p, ep) }}
+<div class="page-head"><div><h1>مراجعة الخطة — الإصدار {{ pv.version_no }} {{ plan_badge(pv.status) }}</h1>
+  <p class="sub">{{ p.full_name }} · <span class="num">{{ p.file_no }}</span> · {{ p.birth_date|age }} · كتبها {{ (r.versions|selectattr('id','equalto',pv.id)|first).author_name }} · أُرسلت {{ pv.submitted_at|dt }}</p></div>
+  <a class="btn" href="/episodes/{{ ep.id }}/assessment">فتح التقييم الكامل</a></div>
+
+{% if r.is_author %}<div class="notice danger">⛔ أنت كاتب هذه الخطة: لا يمكنك مراجعتها أو اعتمادها (يُرفض ذلك على الخادم أيضاً).</div>{% endif %}
+
+<div class="grid c2">
+<section>
+  <h2>الأدلة</h2>
+  {{ safety_box(v.safety) }}
+  {% if v.alerts %}<div class="card"><h3>تنبيهات مفتوحة</h3>{% for a in v.alerts %}<div class="item-row">{{ sev_badge(a.severity) }} {{ a.message }}
+    <span class="badge {{ 'ok' if a.status == 'ACKNOWLEDGED' else 'warn' }}">{{ 'مُقرّ بها' if a.status == 'ACKNOWLEDGED' else 'تحتاج إقرار مراجع' }}</span>
+    {% if a.status != 'ACKNOWLEDGED' and not r.is_author %}<form data-api="/api/alerts/{{ a.id }}/ack" data-reload class="actions mt-s"><input name="note" required class="flex-1" placeholder="ما الذي رُوجع وما القرار؟" aria-label="ملاحظة الإقرار"><button>إقرار</button></form>{% endif %}</div>{% endfor %}</div>{% endif %}
+
+  <div class="card"><h3>من التقييم (الإصدار المرتبط: {{ r.assessment_version.version_no if r.assessment_version else '—' }})</h3>
+    {% set qby = v.questionnaire.by_code %}{% set A = r.assessment_version.snapshot.answers if r.assessment_version else v.answers %}
+    <dl class="kv small">
+    {% for code in ['LB_PRESENTING_PROBLEM','LB_DURATION_CATEGORY','LB_DISTRIBUTION','LB_DISTRIBUTION_SIDE','LB_PAIN_NOW','LB_AGG','LB_EASE','LB_NEURO_SYMPTOMS','LB_NEURO_CHANGE','LB_SPINE_SURGERY','LB_SURG_RESTRICTIONS','LB_IMAGING_REPORT_TEXT','LB_IMAGING_CLINICAL_RELEVANCE','LB_ACTIVITY_LIMITS','LB_PAIN_CLASSIFICATION','LB_CERTAINTY','LB_CLINICAL_IMPRESSION','LB_DIFFERENTIALS'] %}
+      {% if A.get(code) and A[code].status != 'NOT_ASKED' %}<dt>{{ qby[code].text }}</dt><dd>{{ display_value(qby[code], A[code]) }}</dd>{% endif %}
+    {% endfor %}</dl></div>
+
+  <div class="card"><h3>الفحص</h3>
+    {% set ex = r.assessment_version.snapshot.exam_results if r.assessment_version else v.exam_results %}
+    <ul class="small">{% for e in ex %}{% set t = v.tests.get(e.test_code.split(':')[0]) %}<li>{{ t.name_ar if t else e.test_code }}{% if ':' in e.test_code %} {{ e.test_code.split(':')[1] }}{% endif %} {{ SIDE_LABELS[e.side] if e.side != 'NA' else '' }}:
+      <b>{{ RESULT_LABELS[e.result] }}</b> {{ e.value_num if e.value_num is not none else '' }} {{ e.value_text or '' }} {% if e.not_done_reason %}({{ e.not_done_reason }}){% endif %}</li>{% else %}<li>لا يوجد</li>{% endfor %}</ul></div>
+
+  <div class="card"><h3>الأهداف والقياسات</h3>
+    <ul class="small">{% for g in v.goals %}<li>{{ g.description }} — {{ g.baseline_value or '—' }} ← {{ g.target_value }} {{ g.unit or '' }}</li>{% endfor %}</ul>
+    <ul class="small">{% for o in v.outcomes %}<li>{{ v.outcome_catalog[o.measure_code].name_ar }}{% if o.label %} ({{ o.label }}){% endif %} — {{ TIMEPOINTS[o.timepoint] }}: <span class="num">{{ o.value_num }}</span></li>{% endfor %}</ul></div>
+
+  <div class="card"><h3>من التاريخ الطبي</h3>
+    {% set H = v.history %}
+    <ul class="small">
+    {% for code, a in H.items() if a.status == 'ANSWERED' and ((code.startswith('HX_COND_') and a.value == 'YES') or code in ('HX_IMPLANTS','HX_MED_CLASSES','HX_PREGNANCY','HX_ALLERGIES') or (code.startswith('HX_SF_') and a.value == 'YES')) %}
+      {% set hq = r.history_q.by_code.get(code) %}<li>{{ hq.text if hq else code }}: <b>{{ display_value(hq, a) if hq else a.value }}</b></li>{% else %}<li>لا توجد أمراض/أدوية/زرعات مسجلة بنعم.</li>{% endfor %}</ul></div>
+</section>
+
+<section>
+  <h2>الخطة المقترحة</h2>
+  {% set c = pv.content %}
+  <div class="card"><dl class="kv"><dt>الانطباع</dt><dd>{{ c.impression }}</dd><dt>اليقين</dt><dd>{{ CERTAINTY.get(c.certainty) }}</dd>
+    <dt>المبررات</dt><dd>{{ c.rationale or '—' }}</dd><dt>البدائل</dt><dd>{{ c.alternatives or '—' }}</dd>
+    <dt>الجلسات</dt><dd>{{ c.sessions_planned }} · {{ c.frequency_per_week or '—' }}/أسبوع</dd><dt>إعادة التقييم</dt><dd>{{ c.reassessment }}</dd>
+    <dt>المراحل</dt><dd>{{ c.phases_note or '—' }}</dd><dt>احتياطات عامة</dt><dd>{{ c.general_precautions or '—' }}</dd></dl></div>
+
+  {% if r.diff %}<div class="card"><h3>التغييرات عن الإصدار {{ r.previous.version_no }}</h3><ul class="small">{% for d in r.diff %}<li>{% if d.item %}{{ {'added':'＋ أُضيف','removed':'－ حُذف','modified':'✎ عُدّل'}[d.change] }}: {{ d.item }}{% if d.fields %} ({{ d.fields|join('، ') }}){% endif %}{% else %}✎ {{ d.field }}{% endif %}</li>{% endfor %}</ul></div>{% endif %}
+
+  <form class="card" data-api="/api/plan-versions/{{ pv.id }}/decision" data-redirect="/reviews" data-success="سُجّل القرار">
+    <h3>البنود — مع تعليق لكل بند عند الحاجة</h3>
+    {% for it in r['items'] %}<div class="item-row">{% if it.exercise_code %}<img class="thumb" src="/library/figure/{{ it.exercise_code }}.svg" width="72" height="66" alt=""> {% endif %}<b>{{ CATEGORY_LABELS[it.category] }}: {{ it.title }}</b>{% if it.equipment_code %} — {{ r.equipment[it.equipment_code].name }}{% endif %}{% if it.program_label %}<br><span class="badge info">برنامج الجهاز: {{ it.program_label }}</span>{% endif %}
+      <dl class="kv small mt-s"><dt>الهدف</dt><dd>{{ it.target or '—' }}</dd><dt>الجرعة</dt><dd>{{ it.dosage or '—' }}</dd><dt>الطريقة</dt><dd>{{ it.method or '—' }}</dd>
+        <dt>الاحتياطات</dt><dd>{{ it.precautions or '—' }}</dd><dt>التقدم / التوقف</dt><dd>{{ it.progression_criteria or '—' }} / {{ it.stop_criteria or '—' }}</dd>
+        {% if it.category == 'DEVICE' %}<dt>مراجعة الموانع</dt><dd>{{ '✓ مؤكدة من الكاتب' if it.contraindications_reviewed else '⛔ غير مؤكدة' }}</dd>{% endif %}</dl>
+      {% if r.can_decide %}<label class="small mt-s">تعليق على البند<input name="item_comments.{{ it.id }}"></label>{% endif %}</div>{% endfor %}
+
+    {% if r.can_decide and pv.status in ('SUBMITTED','ESCALATED','ON_HOLD') %}
+    <h3 class="mt-m">القرار</h3>
+    {% if r.approval_blockers %}<div class="notice warn"><h3>◌ موانع الاعتماد الحالية (يتحقق منها الخادم)</h3><ul>{% for b in r.approval_blockers %}<li>{{ b }}</li>{% endfor %}</ul></div>{% endif %}
+    <div class="field"><label for="d-c">التعليق (إلزامي لغير الاعتماد)</label><textarea id="d-c" name="comment"></textarea></div>
+    <label class="check"><input type="checkbox" name="evidence_reviewed"> راجعتُ يدوياً سرد الأدلة والقياسات والتاريخ وعلامات الخطر قبل القرار</label>
+    <label class="check"><input type="checkbox" name="hold_episode"> عند «التعليق»: تعليق حلقة العلاج كاملة (إحالة)</label>
+    <div class="actions mt-m">
+      {% if pv.status in ('SUBMITTED','ESCALATED') %}<button class="primary" name="action" value="APPROVE" {% if r.approval_blockers %}disabled{% endif %}>✓ اعتماد</button>
+      <button class="warn" name="action" value="REQUEST_CHANGES">↩ إعادة للتعديل</button>{% endif %}
+      {% if pv.status == 'SUBMITTED' and user.role_code != 'DIRECTOR' %}<button class="warn" name="action" value="ESCALATE">⇧ تصعيد للمدير</button>{% endif %}
+      {% if pv.status in ('SUBMITTED','ESCALATED') %}<button class="danger" name="action" value="HOLD">⏸ تعليق وإحالة</button>{% endif %}
+      {% if pv.status == 'ON_HOLD' %}<button name="action" value="RESUME">إعادة إلى المراجعة</button>{% endif %}
+    </div>
+    <p class="small muted">يُسجَّل القرار باسمك ودورك ووقته ورقم الإصدار، ولا يُمحى.</p>
+    {% elif pv.status == 'ESCALATED' and user.role_code != 'DIRECTOR' %}<div class="notice">الخطة مصعّدة: القرار للمدير.</div>{% endif %}
+  </form>
+
+  <div class="card"><h3>سجل القرارات</h3><ul class="timeline">{% for dcs in r.decisions %}<li>v{{ dcs.version_no }} · <b>{{ ACTION_LABELS[dcs.action] }}</b> — {{ dcs.actor_name }} · {{ dcs.at|dt }}{% if dcs.comment %}<br>«{{ dcs.comment }}»{% endif %}</li>{% endfor %}</ul></div>
+</section>
+</div>
+{% endblock %}

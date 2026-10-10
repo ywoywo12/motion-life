@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+{% block title %}المرضى{% endblock %}
+{% block content %}
+<div class="page-head"><div><h1>المرضى</h1><p class="sub">تظهر فقط الملفات ضمن صلاحيتك.</p></div></div>
+<form class="card tight actions" method="get" action="/patients" role="search">
+  <label class="sr-only" for="q">بحث</label>
+  <input id="q" type="search" name="q" value="{{ q }}" placeholder="الاسم أو رقم الملف أو الهاتف" class="flex-1">
+  <button class="primary">بحث</button>
+</form>
+<div class="card">
+  <div class="table-wrap"><table><thead><tr><th>رقم الملف</th><th>الاسم</th><th>الجنس</th><th>العمر</th><th>القسم</th><th>المعالج</th></tr></thead><tbody>
+  {% for r in rows %}<tr><td class="num">{{ r.file_no }}</td><td><a href="/patients/{{ r.id }}">{{ r.full_name }}</a>{% if r.is_synthetic %} <span class="badge">تجريبي</span>{% endif %}</td>
+    <td>{{ {'M':'ذكر','F':'أنثى'}.get(r.sex, '—') }}</td><td>{{ r.birth_date|age if r.birth_date is defined else '—' }}</td><td>{{ r.department_name }}</td><td>{{ r.therapists or '—' }}</td></tr>
+  {% else %}<tr><td colspan="6" class="empty">لا توجد نتائج.</td></tr>{% endfor %}
+  </tbody></table></div>
+</div>
+
+{% if has_perm(user, 'patient.identity.write') %}
+<section class="card" id="new"><h2>تسجيل مريض جديد</h2>
+<form data-api="/api/patients" data-redirect="/patients/{id}" data-success="تم إنشاء الملف">
+  <div class="form-row">
+    <div class="field"><label for="f-name">الاسم الكامل *</label><input id="f-name" name="full_name" type="text" required maxlength="200"></div>
+    <div class="field"><label for="f-bd">تاريخ الميلاد</label><input id="f-bd" name="birth_date" type="date"></div>
+    <div class="field"><label for="f-sex">الجنس *</label><select id="f-sex" name="sex" required><option value="">— اختر —</option><option value="M">ذكر</option><option value="F">أنثى</option></select></div>
+    <div class="field"><label for="f-ph">رقم الهاتف</label><input id="f-ph" name="phone" type="tel" maxlength="30"></div>
+    <div class="field"><label for="f-occ">المهنة</label><input id="f-occ" name="occupation" type="text"></div>
+    <div class="field"><label for="f-h">الطول (سم)</label><input id="f-h" name="height_cm" type="number" min="40" max="250" step="0.1"></div>
+    <div class="field"><label for="f-w">الوزن (كغ)</label><input id="f-w" name="weight_kg" type="number" min="2" max="400" step="0.1"></div>
+    <div class="field"><label for="f-ref">الطبيب المحوِّل</label><input id="f-ref" name="referring_doctor" type="text"></div>
+  </div>
+  <details><summary>شخص للطوارئ وبيانات الأرشيف الورقي</summary>
+  <div class="form-row mt-s">
+    <div class="field"><label for="f-ecn">شخص للطوارئ</label><input id="f-ecn" name="emergency_contact.name" type="text"></div>
+    <div class="field"><label for="f-ecr">صلة القرابة</label><input id="f-ecr" name="emergency_contact.relation" type="text"></div>
+    <div class="field"><label for="f-ecp">رقم هاتفه</label><input id="f-ecp" name="emergency_contact.phone" type="tel"></div>
+    <div class="field"><label for="f-ser">رقم التسلسل</label><input id="f-ser" name="serial_no" type="text"></div>
+    <div class="field"><label for="f-shelf">الرف</label><input id="f-shelf" name="archive_shelf" type="text"></div>
+    <div class="field"><label for="f-cab">الخزانة/الدرج</label><input id="f-cab" name="archive_cabinet" type="text"></div>
+  </div></details>
+  <div data-dup hidden class="notice warn mt-s">
+    <label class="check"><input type="checkbox" name="confirm_duplicate"> تحققتُ من الملفات المشابهة وأؤكد أنه مريض مختلف</label>
+    <div class="field mt-s"><label for="f-dr">السبب</label><input id="f-dr" name="duplicate_reason" type="text"></div>
+  </div>
+  <p class="small muted">يُنشأ رقم ملف فريد تلقائياً. يُوزَّع المريض على قسم الرجال/النساء حسب الجنس، ويُخصّص المعالج من رئيس القسم.</p>
+  <button class="primary">إنشاء الملف</button>
+</form></section>
+{% endif %}
+{% endblock %}

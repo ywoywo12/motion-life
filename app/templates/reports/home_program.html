@@ -1,0 +1,17 @@
+{% extends "reports/base.html" %}
+{% block body %}
+<p>برنامج التمارين المعتمد (الإصدار <span class="num">{{ pv.version_no }}</span>{% if approver %}، اعتمده {{ approver.full_name }}{% endif %}). نفّذ التمارين كما شرحها لك المعالج.</p>
+<div class="box small"><b>توقف واتصل بالمركز</b> إذا ظهر ألم شديد أو متزايد يستمر بعد التمرين، أو تنميل/ضعف جديد في الساق أو اليد، أو صعوبة جديدة في التبول أو التحكم بالبول/البراز، أو دوار أو ألم صدري أو ضيق نفس.</div>
+{% for it in items %}
+<div class="ex">
+  <div>{% if it.svg %}{{ it.svg|safe }}{% endif %}</div>
+  <div><h3>{{ loop.index }}. {{ it.title }}</h3>
+    <p>{{ it.method or '' }}</p>
+    <p><span class="dose">الجرعة: {{ it.dosage or 'حسب تعليمات المعالج' }}</span> <span class="small muted">({{ CATEGORY_LABELS[it.category] }})</span></p>
+    {% if it.precautions %}<p class="small">⚠ {{ it.precautions }}</p>{% endif %}
+    {% if it.stop_criteria %}<p class="small">توقف إذا: {{ it.stop_criteria }}</p>{% endif %}
+    {% if it.progression_criteria %}<p class="small">التقدم: {{ it.progression_criteria }}</p>{% endif %}
+  </div>
+</div>
+{% else %}<p class="muted">لا توجد تمارين في الخطة المعتمدة.</p>{% endfor %}
+{% endblock %}

@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+{% block title %}المكتبة العلاجية{% endblock %}
+{% block content %}
+<div class="page-head"><div><h1>المكتبة العلاجية</h1>
+  <p class="sub">{{ data.exercises|length }} تمريناً برسوم توضيحية لكل مناطق الجسم، و{{ data.devices|length }} جهازاً مع برامجها المدمجة.</p></div></div>
+<div class="actions mb-m" role="tablist">
+  <a class="btn {% if request.args.get('tab') != 'devices' %}btn-primary{% endif %}" href="/library">التمارين</a>
+  <a class="btn {% if request.args.get('tab') == 'devices' %}btn-primary{% endif %}" href="/library?tab=devices">الأجهزة والبرامج</a>
+</div>
+
+{% if request.args.get('tab') == 'devices' %}
+<div class="notice small">البرنامج المختار هو الإعداد المسبق المخزّن في الجهاز (كما يظهر على شاشته). الشدة والزمن والجرعة يضبطها المختص حسب دليل الشركة والحالة، مع مراجعة الموانع لكل مريض.</div>
+<form class="card tight actions" method="get"><input type="hidden" name="tab" value="devices">
+  <input type="search" name="q" value="{{ q }}" placeholder="بحث بالحالة أو البرنامج (عربي أو إنجليزي)" class="flex-1" aria-label="بحث"><button class="primary">بحث</button></form>
+{% for dv in data.devices %}
+{% set progs = [] %}{% for pr in dv.programs %}{% if not q or q in pr.ar or q.lower() in pr.en.lower() %}{% set _ = progs.append(pr) %}{% endif %}{% endfor %}
+{% if not q or progs %}
+<details class="card tight test-card" {% if q %}open{% endif %}>
+  <summary><b>{{ dv.name_ar }}</b> <span class="ltr small muted">{{ dv.name }}</span> <span class="badge">{{ dv.category_ar }}</span>
+    <span class="badge {{ 'info' if dv.programs else '' }}">{{ progs|length if q else dv.programs|length }} برنامج</span></summary>
+  <div class="inner">
+    {% if dv.source %}<p class="small muted">المصدر: {{ dv.source }}</p>{% else %}<p class="small muted">{{ dv.status_note }}</p>{% endif %}
+    {% if progs %}<div class="table-wrap"><table><thead><tr><th>#</th><th>البرنامج</th><th>الاسم على الجهاز</th></tr></thead><tbody>
+    {% for pr in progs %}<tr><td class="num small">{{ pr.no or loop.index }}</td><td>{{ pr.ar }}</td><td class="ltr small">{{ pr.en }}</td></tr>{% endfor %}
+    </tbody></table></div>{% endif %}
+  </div></details>
+{% endif %}
+{% endfor %}
+{% else %}
+<form class="card tight form-row" method="get" role="search">
+  <input type="search" name="q" value="{{ q }}" placeholder="بحث في مكتبة التمارين…" aria-label="بحث">
+  <select name="region" aria-label="المنطقة"><option value="">كل المناطق</option>{% for r in data.regions %}<option value="{{ r.code }}" {% if region == r.code %}selected{% endif %}>{{ r.ar }}</option>{% endfor %}</select>
+  <select name="type" aria-label="النوع"><option value="">كل الأنواع</option>{% for t in data.types %}<option value="{{ t.code }}" {% if typ == t.code %}selected{% endif %}>{{ t.ar }}</option>{% endfor %}</select>
+  <button class="primary">تصفية</button></form>
+<div class="ex-grid">
+{% for e in data.exercises if (not region or e.region == region) and (not typ or e.type == typ) and (not q or q in e.name_ar or q.lower() in e.name_en.lower()) %}
+<article class="ex-card">
+  <img src="/library/figure/{{ e.code }}.svg" alt="رسم توضيحي: {{ e.name_ar }}" width="120" height="110">
+  <div><h3>{{ e.name_ar }}</h3><p class="ltr small muted">{{ e.name_en }}</p>
+    <p class="small"><span class="badge info">{{ e.region_ar }}</span> <span class="badge">{{ e.type_ar }}</span></p>
+    <p class="small">{{ e.steps }}</p><p class="small"><b>جرعة بداية مقترحة:</b> {{ e.dosage }}</p>
+    <p class="small muted">⚠ {{ e.caution }}</p></div>
+</article>
+{% else %}<p class="empty">لا توجد تمارين مطابقة.</p>{% endfor %}
+</div>
+{% endif %}
+{% endblock %}

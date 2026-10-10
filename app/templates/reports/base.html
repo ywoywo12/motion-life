@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="ar" dir="rtl"><head><meta charset="utf-8"><title>{{ title }}</title>
+<style>
+  @page { size: A4; }
+  * { box-sizing: border-box; }
+  body { font-family: "IBM Plex Sans Arabic", "Noto Sans Arabic", "Noto Naskh Arabic", "DejaVu Sans", Tahoma, sans-serif; color: #111; font-size: 10.5pt; line-height: 1.55; margin: 0; }
+  .num { direction: ltr; unicode-bidi: isolate; font-variant-numeric: tabular-nums; }
+  header.r { display: flex; justify-content: space-between; align-items: flex-end; border-bottom: 2.5pt solid #0f2c4c; padding-bottom: 6pt; margin-bottom: 8pt; }
+  .logo b { font-size: 17pt; color: #0f2c4c; letter-spacing: 1pt; } .logo b span { color: #3aa6d6; }
+  .logo small { display: block; color: #444; font-size: 8.5pt; }
+  h1 { font-size: 14pt; margin: 0; color: #0f2c4c; text-align: left; }
+  h1 small { display: block; font-size: 8.5pt; color: #555; font-weight: normal; }
+  h2 { font-size: 11.5pt; color: #fff; background: #0f2c4c; padding: 3pt 8pt; margin: 12pt 0 6pt; border-radius: 3pt; break-after: avoid; page-break-after: avoid; }
+  h3 { font-size: 10.5pt; color: #0f2c4c; margin: 8pt 0 4pt; break-after: avoid; }
+  table { width: 100%; border-collapse: collapse; margin-bottom: 6pt; }
+  th, td { border: 0.6pt solid #9fb3c6; padding: 3pt 5pt; text-align: right; vertical-align: top; }
+  th { background: #e8f2f9; color: #0f2c4c; }
+  tr { break-inside: avoid; page-break-inside: avoid; }
+  .id-box { display: grid; grid-template-columns: repeat(4, 1fr); gap: 3pt 10pt; border: 0.8pt solid #9fb3c6; padding: 6pt 8pt; border-radius: 4pt; background: #f6fafd; }
+  .id-box div span { color: #555; font-size: 8.5pt; display: block; }
+  .id-box div b { font-size: 10pt; }
+  .qa td:first-child { width: 45%; color: #333; }
+  .muted { color: #666; } .small { font-size: 8.5pt; }
+  .flag { border: 1pt solid #9b1c1f; color: #9b1c1f; padding: 1pt 5pt; border-radius: 3pt; font-weight: bold; }
+  .ok { border: 1pt solid #17603a; color: #17603a; padding: 1pt 5pt; border-radius: 3pt; }
+  .box { border: 0.8pt solid #9fb3c6; padding: 6pt 8pt; border-radius: 4pt; margin-bottom: 6pt; break-inside: avoid; }
+  .sign { display: grid; grid-template-columns: 1fr 1fr; gap: 10pt; margin-top: 10pt; }
+  .sign div { border-top: 0.8pt solid #333; padding-top: 3pt; font-size: 9pt; }
+  .page-break { break-before: page; page-break-before: always; }
+  .fig-s { float: left; margin: 0 0 2pt 4pt; }
+  .ex { display: grid; grid-template-columns: 150px 1fr; gap: 10pt; border: 0.8pt solid #9fb3c6; border-radius: 5pt; padding: 6pt; margin-bottom: 7pt; break-inside: avoid; }
+  .ex h3 { margin: 0 0 3pt; font-size: 12pt; }
+  .dose { background: #e8f2f9; border-radius: 3pt; padding: 2pt 6pt; display: inline-block; font-weight: bold; }
+  .legal { font-size: 8pt; color: #555; margin-top: 10pt; border-top: 0.5pt solid #ccc; padding-top: 4pt; }
+</style></head>
+<body>
+<header class="r">
+  <div class="logo"><b>MOTION <span>LIFE</span></b><small>مركز العلاج الفيزيائي وإعادة التأهيل · الحركة تبدأ من هنا</small>
+    <small>{{ center_address }}{% if center_phone %} · <span class="num">{{ center_phone }}</span>{% endif %}</small></div>
+  <h1>{{ title }}<small>طُبع: {{ now|dt }} · بواسطة {{ user.full_name }}</small></h1>
+</header>
+<div class="id-box">
+  <div><span>الاسم الكامل</span><b>{{ p.full_name }}</b></div>
+  <div><span>رقم الملف</span><b class="num">{{ p.file_no }}</b></div>
+  <div><span>العمر / الجنس</span><b>{{ p.birth_date|age }} / {{ 'ذكر' if p.sex == 'M' else 'أنثى' }}</b></div>
+  <div><span>الهاتف</span><b class="num">{{ p.phone or '—' }}</b></div>
+  <div><span>المهنة</span><b>{{ p.occupation or '—' }}</b></div>
+  <div><span>تاريخ الميلاد</span><b>{{ p.birth_date|date }}</b></div>
+  {% if ep %}<div><span>المشكلة (حلقة العلاج)</span><b>{{ ep.title }}</b></div><div><span>تاريخ فتح الحلقة</span><b>{{ ep.created_at|date }}</b></div>{% endif %}
+</div>
+{% if p.is_synthetic %}<p class="small"><span class="flag">بيانات تجريبية وهمية — ليست لمريض حقيقي</span></p>{% endif %}
+{% block body %}{% endblock %}
+<p class="legal">وثيقة سريرية سرية — للاستخدام ضمن ملف المريض فقط. هذا التقرير مستخرج من نظام Motion Life ويعكس البيانات المحفوظة لحظة الطباعة.
+  الأسماء والتواريخ المذكورة لعمليات الاعتماد مسجلة إلكترونياً في النظام، ولا تمثل توقيعاً خطياً للمريض.</p>
+</body></html>

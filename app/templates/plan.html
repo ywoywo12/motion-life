@@ -1,0 +1,107 @@
+{% extends "base.html" %}
+{% from "macros.html" import patient_head, plan_badge, safety_badge, ep_tabs %}
+{% block title %}الخطة العلاجية — {{ p.full_name }}{% endblock %}
+{% block scripts %}<script src="/static/js/plan.js" defer></script>{% endblock %}
+{% block content %}
+{{ patient_head(p, ep) }}
+<div class="page-head"><div><h1>الخطة العلاجية</h1><p class="sub">{{ p.full_name }} · {{ ep.title }} · السلامة: {{ safety_badge(v.safety.status if v.safety else None) }}</p></div>
+  {% if v.versions|selectattr('status','equalto','APPROVED')|list %}<div class="actions"><a class="btn" href="/reports/episode/{{ ep.id }}/plan.pdf">PDF الخطة المعتمدة</a><a class="btn" href="/reports/episode/{{ ep.id }}/home-program.pdf">PDF البرنامج المنزلي للمريض</a></div>{% endif %}</div>
+{{ ep_tabs(ep, 'plan') }}
+
+<div class="notice small">الخطة يُدخلها ويراجعها مختص. لا يقترح النظام أجهزة أو مدداً أو شدّات، ولا يفرض عدد جلسات أو مراحل ثابتة.
+  يعتمدها رئيس القسم أو المدير، ولا يستطيع كاتب الخطة اعتمادها. تُنفَّذ الجلسات فقط على إصدار معتمد.</div>
+
+{% set cur = v.current %}
+{% set editable = (cur is none) or (cur.status == 'DRAFT' and cur.author_id == user.id) %}
+{% if v.assessment.status != 'FINALIZED' %}<div class="notice warn">◌ التقييم غير منتهٍ (أو عُدّل بعد آخر إصدار). يمكن كتابة المسودة، لكن الإرسال يتطلب إصدار تقييم.</div>{% endif %}
+
+{% if cur and cur.status == 'DRAFT' and cur.author_id != user.id %}<div class="notice">المسودة الحالية (v{{ cur.version_no }}) يكتبها {{ cur.author_name }}. يعدّلها كاتبها فقط.</div>{% endif %}
+
+{% if editable and has_perm(user, 'plan.author') %}
+{% set c = cur.content if cur else {} %}
+{% set its = cur['items'] if cur else [] %}
+<form class="card" id="plan-form" data-api="/api/episodes/{{ ep.id }}/plan/draft" data-method="PUT" data-reload data-success="حُفظت المسودة">
+  <h2>{{ 'مسودة الإصدار ' ~ cur.version_no if cur else 'مسودة جديدة' }} {% if cur %}{{ plan_badge(cur.status) }}{% endif %}</h2>
+  {% if cur %}<input type="hidden" name="lock_version" value="{{ cur.lock_version }}" data-num>{% endif %}
+  {% if cur and cur.based_on_version_id %}<p class="small muted">مبنية على إصدار سابق. راجع ملاحظات المراجع في السجل أدناه. أعد تأكيد مراجعة موانع الأجهزة لكل بند.</p>{% endif %}
+  <div class="field"><label for="c-imp">التشخيص الوظيفي / الانطباع السريري *</label><textarea id="c-imp" name="content.impression">{{ c.impression or '' }}</textarea></div>
+  <div class="form-row">
+    <div class="field"><label for="c-cer">درجة اليقين *</label><select id="c-cer" name="content.certainty"><option value="">—</option>{% for k, l in CERTAINTY.items() %}<option value="{{ k }}" {% if c.certainty == k %}selected{% endif %}>{{ l }}</option>{% endfor %}</select></div>
+    <div class="field"><label for="c-sp">عدد الجلسات المخطط *</label><input id="c-sp" type="number" min="1" max="60" name="content.sessions_planned" value="{{ c.sessions_planned or '' }}"><span class="hint">الملف الورقي يدعم حتى 22 جلسة؛ العدد يحدده المختص.</span></div>
+    <div class="field"><label for="c-fq">جلسات أسبوعياً</label><input id="c-fq" type="number" min="1" max="7" name="content.frequency_per_week" value="{{ c.frequency_per_week or '' }}"></div>
+  </div>
+  <div class="form-row">
+    <div class="field"><label for="c-rat">المبررات</label><textarea id="c-rat" name="content.rationale">{{ c.rationale or '' }}</textarea></div>
+    <div class="field"><label for="c-alt">البدائل/الاحتمالات الأخرى</label><textarea id="c-alt" name="content.alternatives">{{ c.alternatives or '' }}</textarea></div>
+  </div>
+  <div class="form-row">
+    <div class="field"><label for="c-re">خطة إعادة التقييم *</label><input id="c-re" name="content.reassessment" value="{{ c.reassessment or 'بعد الجلسة 6 و12 أو قبلها عند الحاجة' }}"></div>
+    <div class="field"><label for="c-ph">ملاحظة المراحل (مرنة ومتداخلة)</label><input id="c-ph" name="content.phases_note" value="{{ c.phases_note or '' }}" placeholder="1 تخفيف الأعراض · 2 الحركة والتحكم · 3 القوة والوظيفة"></div>
+  </div>
+  <div class="field"><label for="c-gp">احتياطات عامة</label><textarea id="c-gp" name="content.general_precautions">{{ c.general_precautions or '' }}</textarea></div>
+  {% if v.goals %}<fieldset class="field"><legend><b>الأهداف المرتبطة</b></legend>{% for g in v.goals if g.status == 'ACTIVE' %}<label class="check"><input type="checkbox" name="content.goal_ids" value="{{ g.id }}" data-multi {% if g.id in (c.goal_ids or []) or not cur %}checked{% endif %}> {{ g.description }} ({{ g.baseline_value or '—' }} ← {{ g.target_value }} {{ g.unit or '' }})</label>{% endfor %}</fieldset>{% endif %}
+
+  {% if v.precaution_flags %}<div class="notice warn">⚠ لدى المريض: {% for f in v.precaution_flags %}<span class="badge warn">{{ FLAG_LABELS[f] }}</span> {% endfor %}
+    — راجع تعليمات الشركة المصنعة لكل جهاز. لا يحكم النظام آلياً بأن جهازاً بعينه ممنوع أو آمن.</div>{% endif %}
+
+  <h3 class="mt-m">البنود العلاجية</h3>
+  <div class="picker" id="picker" data-src="/api/library" data-region="{{ {'LUMBAR':'LUMBAR'}.get(ep.region, '') }}">
+    <div class="tabs" role="tablist">
+      <button type="button" data-tab="ex" aria-selected="true">مكتبة التمارين</button>
+      <button type="button" data-tab="dev" aria-selected="false">الأجهزة والبرامج</button>
+      <span class="small muted">اضغط «إضافة» ليُضاف البند أدناه ويمكن تعديله.</span>
+    </div>
+    <div data-pane="ex">
+      <div class="filters">
+        <input type="search" data-f="q" placeholder="بحث في مكتبة التمارين…" aria-label="بحث في التمارين">
+        <select data-f="region" aria-label="المنطقة"><option value="">كل المناطق</option></select>
+        <select data-f="type" aria-label="النوع"><option value="">كل الأنواع</option></select>
+        <select data-f="as" aria-label="يضاف كـ"><option value="GYM">يُضاف إلى: تمارين الصالة</option><option value="HOME">يُضاف إلى: البرنامج المنزلي</option></select>
+      </div>
+      <div class="list" data-list="ex" aria-live="polite"><p class="empty">جارٍ تحميل المكتبة…</p></div>
+    </div>
+    <div data-pane="dev" hidden>
+      <div class="filters"><input type="search" data-f="dq" placeholder="بحث بالحالة أو البرنامج (عربي/إنجليزي)…" aria-label="بحث في البرامج"></div>
+      <div class="list" data-list="dev"></div>
+    </div>
+  </div>
+  <div id="items" data-rows>
+  {% for it in its %}{% set i = loop.index0 %}{% include "_plan_item.html" %}{% endfor %}
+  </div>
+  <template id="item-tpl">{% with it = {}, i = '__i__' %}{% include "_plan_item.html" %}{% endwith %}</template>
+  <button type="button" data-copy-row="item-tpl" data-target="items">＋ بند غير موجود في المكتبة</button>
+  <hr>
+  <div class="actions"><button class="primary" type="submit">حفظ المسودة</button></div>
+</form>
+{% if cur and cur.status == 'DRAFT' %}
+<div class="card"><h2>الإرسال للمراجعة</h2>
+  {% if v.blockers %}<div class="notice warn"><h3>◌ متطلبات قبل الإرسال (يتحقق منها الخادم)</h3><ul>{% for b in v.blockers %}<li>{{ b }}</li>{% endfor %}</ul></div>
+  {% else %}<div class="notice ok">✓ المسودة المحفوظة مستوفية للشروط.</div>{% endif %}
+  <form data-api="/api/episodes/{{ ep.id }}/plan/submit" data-reload data-success="أُرسلت للمراجعة"><button class="primary" {% if v.blockers %}disabled{% endif %}>إرسال الإصدار {{ cur.version_no }} للمراجعة</button>
+    <span class="small muted">احفظ المسودة أولاً؛ يُرسل آخر ما حُفظ على الخادم.</span></form></div>
+{% endif %}
+{% endif %}
+
+{% if cur and cur.status in ('CHANGES_REQUESTED','ON_HOLD','APPROVED') and has_perm(user, 'plan.author') %}
+<div class="card"><h2>{{ 'تعديل الخطة المعتمدة' if cur.status == 'APPROVED' else 'إعداد إصدار معدّل' }}</h2>
+  <p class="small">{% if cur.status == 'APPROVED' %}أي تعديل جوهري ينشئ إصداراً جديداً قيد المراجعة؛ يبقى الإصدار المعتمد الحالي نافذاً للجلسات حتى اعتماد الجديد.{% else %}ينشئ نسخة مسودة جديدة؛ يُحتفظ بالإصدار الحالي وتعليقات المراجع كما هي.{% endif %}</p>
+  <form data-api="/api/episodes/{{ ep.id }}/plan/revise" data-reload><button class="primary">إنشاء الإصدار {{ cur.version_no + 1 }}</button></form></div>
+{% endif %}
+
+<section class="card"><h2>الإصدارات وسجل القرارات</h2>
+  {% for x in v.versions %}
+  <details class="item-row" {% if loop.first %}open{% endif %}><summary><b>الإصدار {{ x.version_no }}</b> {{ plan_badge(x.status) }} · كتبه {{ x.author_name }} · {{ x.created_at|date }}
+    {% if x.approved_by_name %} · اعتمده <b>{{ x.approved_by_name }}</b> {{ x.approved_at|dt }}{% endif %}</summary>
+    {% set c = x.content %}
+    <dl class="kv mt-s small"><dt>الانطباع</dt><dd>{{ c.impression or '—' }}</dd><dt>اليقين</dt><dd>{{ CERTAINTY.get(c.certainty, '—') }}</dd>
+      <dt>الجلسات</dt><dd>{{ c.sessions_planned or '—' }} · {{ c.frequency_per_week or '—' }}/أسبوع</dd><dt>إعادة التقييم</dt><dd>{{ c.reassessment or '—' }}</dd></dl>
+    <div class="table-wrap"><table class="mt-s"><thead><tr><th>الفئة</th><th>البند</th><th>الجرعة/المعايير</th><th>الاحتياطات/التوقف</th></tr></thead><tbody>
+    {% for it in x['items'] %}<tr><td>{{ CATEGORY_LABELS[it.category] }}{% if it.equipment_code %}<br><span class="small">{{ v.equipment[it.equipment_code].name }}</span>{% endif %}</td><td>{% if it.exercise_code %}<img class="thumb" src="/library/figure/{{ it.exercise_code }}.svg" width="60" height="55" alt=""> {% endif %}{{ it.title }}{% if it.program_label %}<br><span class="small">برنامج: {{ it.program_label }}</span>{% endif %}{% if it.target %}<br><span class="small muted">الهدف: {{ it.target }}</span>{% endif %}</td><td>{{ it.dosage or '—' }}</td><td class="small">{{ it.precautions or '' }}{% if it.stop_criteria %}<br>توقف: {{ it.stop_criteria }}{% endif %}</td></tr>{% endfor %}
+    </tbody></table></div>
+    <ul class="timeline mt-s">{% for dcs in v.decisions if dcs.plan_version_id == x.id %}<li><b>{{ ACTION_LABELS[dcs.action] }}</b> — {{ dcs.actor_name }} ({{ ROLE_NAMES[dcs.actor_role] }}) · {{ dcs.at|dt }}
+      {% if dcs.comment %}<br>«{{ dcs.comment }}»{% endif %}
+      {% for iid, cm in dcs.item_comments.items() %}{% set itn = (x['items']|selectattr('id','equalto',iid)|first) %}<br><span class="small">↳ على «{{ itn.title if itn else 'بند' }}»: {{ cm }}</span>{% endfor %}</li>{% endfor %}</ul>
+  </details>
+  {% else %}<p class="empty">لا توجد إصدارات.</p>{% endfor %}
+</section>
+{% endblock %}
