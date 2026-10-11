@@ -404,3 +404,6 @@ fieldset.payarea[disabled] input{background:#f4f6f8;color:#5f7180}
 .accu{background:#eef3f6;border-radius:6px;padding:1px 6px}
 .accp{color:#1e8e5a}
 .throw{flex-wrap:wrap}
+.permgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:6px}
+.chk.perm{border:1.5px solid var(--line);border-radius:10px;padding:8px 10px;margin:0}
+.perm-btn.full{background:#1e8e5a} .perm-btn.extra{background:#e07b12} .perm-btn.basic{background:#5f7180}

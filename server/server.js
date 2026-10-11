@@ -3,6 +3,7 @@
 'use strict';
 const http = require('http');
 const https = require('https');
+const http2 = require('http2');
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
@@ -45,6 +46,9 @@ let users = readJSON(USERSF, null);
 if (!users) { users = {}; ROLES.forEach(r => { const salt = crypto.randomBytes(8).toString('hex'); users[r] = { salt, hash: hashPw(DEFAULT_PW[r], salt) }; }); writeJSON(USERSF, users); }
 let sessions = readJSON(SESSF, {});
 const roleOf = u => (users[u] && users[u].role) || u;
+/* صلاحيات حساب المعالج (تعدّلها الإدارة) */
+const DEF_PERMS = { appts: true, patients: true, finance: true, library: true, devices: true, stats: false, phone: false, pay: false, allAppts: false, delFiles: false, bothSecs: false };
+const permsOf = v => Object.assign({}, DEF_PERMS, (v && v.perms) || {});
 const newPw = () => String(100000 + crypto.randomInt(900000));
 /* حسابات المعالجين والمعالجات (تُنشأ مرة واحدة بكلمات مرور عشوائية تُحفظ في data/therapist-accounts.txt) */
 const DEFAULT_STAFF = {
@@ -79,18 +83,19 @@ const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; cha
 const send = (res, code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
 const auth = req => { const h = req.headers.authorization || ''; const t = h.startsWith('Bearer ') ? h.slice(7) : new URL(req.url, 'http://x').searchParams.get('token');
   if (!t || !sessions[t]) return null; const u = sessions[t].user || sessions[t].role; const v = users[u]; if (!v) return null;
-  return { token: t, user: u, role: roleOf(u), section: v.section || (SECS.includes(u) ? u : null), tid: v.tid || null, name: v.name || '' }; };
-const allowed = (a, sec) => a.role === 'admin' || a.section === sec;
+  const role = roleOf(u);
+  return { token: t, user: u, role, section: v.section || (SECS.includes(u) ? u : null), tid: v.tid || null, name: v.name || '', perms: role === 'therapist' ? permsOf(v) : null }; };
+const allowed = (a, sec) => a.role === 'admin' || a.section === sec || (a.role === 'therapist' && a.perms.bothSecs && SECS.includes(sec));
 const isManager = a => a.role === 'admin' || a.role === 'women' || a.role === 'men';
-const meOf = a => ({ user: a.user, role: a.role, section: a.section, tid: a.tid, name: a.name });
+const meOf = a => ({ user: a.user, role: a.role, section: a.section, tid: a.tid, name: a.name, perms: a.perms || undefined });
 /* ما يراه المعالج: بدون أرقام هواتف المرضى */
 const PROTECTED_PAY = ['payMode', 'sessionPrice', 'agreedSessions', 'agreedTotal', 'payments'];
 function viewDoc(a, coll, doc) {
-  if (a.role !== 'therapist' || !doc || coll === 'meta') return doc;
+  if (a.role !== 'therapist' || !doc || coll === 'meta' || a.perms.phone) return doc;
   const d = Object.assign({}, doc); delete d.phone; return d;
 }
 function viewSection(a, sec) {
-  const src = db[sec]; if (a.role !== 'therapist') return src;
+  const src = db[sec]; if (a.role !== 'therapist' || a.perms.phone) return src;
   const out = { meta: src.meta, patients: {}, appts: {} };
   Object.entries(src.patients).forEach(([id, d]) => { out.patients[id] = viewDoc(a, 'patients', d); });
   Object.entries(src.appts).forEach(([id, d]) => { out.appts[id] = viewDoc(a, 'appts', d); });
@@ -202,8 +207,8 @@ async function api(req, res, url) {
   /* إدارة حسابات المعالجين (الإدارة + حساب القسم لقسمه) */
   if (p === '/api/users') {
     if (!isManager(a)) return send(res, 403, { error: 'forbidden' });
-    if (req.method === 'GET') return send(res, 200, { users: Object.entries(users).filter(([, v]) => v.role === 'therapist' && allowed(a, v.section)).map(([u, v]) => ({ user: u, name: v.name, section: v.section, tid: v.tid, initialPw: v.initialPw || '' })) });
-    const { action, user, name, section, tid } = await body(req); const u = String(user || '').trim().toLowerCase();
+    if (req.method === 'GET') return send(res, 200, { users: Object.entries(users).filter(([, v]) => v.role === 'therapist' && allowed(a, v.section)).map(([u, v]) => ({ user: u, name: v.name, section: v.section, tid: v.tid, initialPw: v.initialPw || '', perms: permsOf(v) })) });
+    const { action, user, name, section, tid, perms } = await body(req); const u = String(user || '').trim().toLowerCase();
     if (action === 'create') {
       if (!/^[a-z0-9_.-]{2,24}$/.test(u)) return send(res, 400, { error: 'username' });
       if (users[u]) return send(res, 409, { error: 'exists' });
@@ -215,6 +220,11 @@ async function api(req, res, url) {
     const v = users[u]; if (!v || v.role !== 'therapist' || !allowed(a, v.section)) return send(res, 404, { error: 'nouser' });
     if (action === 'reset') { const pw = newPw(); v.salt = crypto.randomBytes(8).toString('hex'); v.hash = hashPw(pw, v.salt); v.initialPw = pw; writeJSON(USERSF, users); accountsFile();
       Object.keys(sessions).forEach(t => { if (sessions[t].user === u) delete sessions[t]; }); writeJSON(SESSF, sessions); return send(res, 200, { user: u, password: pw }); }
+    if (action === 'perms') {
+      if (a.role !== 'admin') return send(res, 403, { error: 'admin_only' });
+      const clean = {}; Object.keys(DEF_PERMS).forEach(k => { clean[k] = !!(perms && perms[k]); });
+      v.perms = clean; writeJSON(USERSF, users); return send(res, 200, { ok: true, perms: clean });
+    }
     if (action === 'delete') { delete users[u]; writeJSON(USERSF, users); accountsFile(); Object.keys(sessions).forEach(t => { if (sessions[t].user === u) delete sessions[t]; }); writeJSON(SESSF, sessions); return send(res, 200, { ok: true }); }
     return send(res, 400, { error: 'action' });
   }
@@ -243,10 +253,12 @@ async function api(req, res, url) {
     const [, sec, coll, id] = m;
     if (!SECS.includes(sec) || !COLLS.includes(coll)) return send(res, 400, { error: 'path' });
     if (!allowed(a, sec)) return send(res, 403, { error: 'forbidden' });
-    const store = db[sec][coll], ex = store[id], th = a.role === 'therapist';
+    const store = db[sec][coll], ex = store[id], th = a.role === 'therapist', P = a.perms || {};
+    const limAppt = th && !P.allAppts, lockPay = th && !P.pay, hidePhone = th && !P.phone;
     if (th && coll === 'meta') return send(res, 403, { error: 'forbidden' });
     if (req.method === 'DELETE') {
-      if (th && (coll !== 'appts' || !ex || ex.tid !== a.tid || (ex.createdBy && ex.createdBy !== a.user))) return send(res, 403, { error: 'not_yours' });
+      if (th && coll === 'patients' && !P.delFiles) return send(res, 403, { error: 'forbidden' });
+      if (limAppt && coll === 'appts' && (!ex || ex.tid !== a.tid || (ex.createdBy && ex.createdBy !== a.user))) return send(res, 403, { error: 'not_yours' });
       delete store[id]; persist(); broadcast(sec, { op: 'del', sec, coll, id, origin: req.headers['x-client'] || '' }); return send(res, 200, { ok: true });
     }
     if (req.method === 'PUT') {
@@ -254,18 +266,20 @@ async function api(req, res, url) {
       if (!doc || typeof doc !== 'object') return send(res, 400, { error: 'doc' });
       delete doc.id;
       if (coll === 'appts') {
-        if (th && ((ex && ex.tid !== a.tid) || doc.tid !== a.tid)) return send(res, 403, { error: 'not_yours' });
+        if (limAppt && ((ex && ex.tid !== a.tid) || doc.tid !== a.tid)) return send(res, 403, { error: 'not_yours' });
         doc.createdBy = ex ? (ex.createdBy || '') : a.user;
-        if (th) { doc.phone = ex ? (ex.phone || '') : ((db[sec].patients[doc.patientId] || {}).phone || ''); if (ex && 'amount' in ex) doc.amount = ex.amount; else delete doc.amount; }
+        if (hidePhone) doc.phone = ex ? (ex.phone || '') : ((db[sec].patients[doc.patientId] || {}).phone || '');
+        if (lockPay) { if (ex && 'amount' in ex) doc.amount = ex.amount; else delete doc.amount; }
         store[id] = doc;
-      } else if (coll === 'patients' && th) {
-        // المعالج لا يعدّل الدفعات ولا رقم الهاتف
-        const keepPay = (d, old) => { PROTECTED_PAY.forEach(k => { if (old && k in old) d[k] = old[k]; else delete d[k]; });
-          if (old) d.phone = old.phone; if (Array.isArray(d.sessions)) d.sessions = d.sessions.map((r, i) => Object.assign({}, r, { amount: old && old.sessions && old.sessions[i] ? old.sessions[i].amount || '' : '' })); };
+      } else if (coll === 'patients' && (lockPay || hidePhone)) {
+        // المعالج (بدون صلاحية) لا يعدّل الدفعات ولا رقم الهاتف
+        const PROT = (lockPay ? PROTECTED_PAY : []).concat(hidePhone ? ['phone'] : []);
+        const keepPay = (d, old) => { PROT.forEach(k => { if (k === 'phone') { if (old) d.phone = old.phone; return; } if (old && k in old) d[k] = old[k]; else d[k] = k === 'payments' ? [0, 1, 2, 3].map(() => ({ amount: '', date: '' })) : ''; });
+          if (lockPay && Array.isArray(d.sessions)) d.sessions = d.sessions.map((r, i) => Object.assign({}, r, { amount: old && old.sessions && old.sessions[i] ? old.sessions[i].amount || '' : '' })); };
         if (Array.isArray(keys) && keys.length && ex) {
           keys.concat(['updated']).forEach(k => {
-            if (!(k in doc) || PROTECTED_PAY.includes(k) || k === 'phone') return;
-            if (k === 'sessions' && Array.isArray(doc.sessions)) { const old = ex.sessions || []; ex.sessions = doc.sessions.map((r, i) => Object.assign({}, r, { amount: old[i] ? old[i].amount || '' : '' })); }
+            if (!(k in doc) || PROT.includes(k)) return;
+            if (k === 'sessions' && lockPay && Array.isArray(doc.sessions)) { const old = ex.sessions || []; ex.sessions = doc.sessions.map((r, i) => Object.assign({}, r, { amount: old[i] ? old[i].amount || '' : '' })); }
             else ex[k] = doc[k];
           });
         } else { const old = ex ? JSON.parse(JSON.stringify(ex)) : null; keepPay(doc, old); if (!old && doc.phone === undefined) doc.phone = ''; store[id] = doc; }
@@ -296,7 +310,7 @@ function serveStatic(req, res, url) {
 const isLocal = req => { const a = (req.socket.remoteAddress || '').replace('::ffff:', ''); return a === '127.0.0.1' || a === '::1'; };
 const handler = (req, res) => {
   const url = new URL(req.url, 'http://local');
-  if (!req.socket.encrypted && httpsOn && !isLocal(req) && !url.pathname.startsWith('/api/') && req.method === 'GET') {   // الأجهزة الأخرى → الرابط الآمن (للميكروفون)
+  if (!req.headers[':scheme'] && !(req.socket && req.socket.encrypted) && httpsOn && !isLocal(req) && !url.pathname.startsWith('/api/') && req.method === 'GET') {   // الأجهزة الأخرى → الرابط الآمن (للميكروفون)
     const host = (req.headers.host || '').split(':')[0];
     res.writeHead(302, { Location: 'https://' + host + ':' + HTTPS_PORT + url.pathname + url.search }); return res.end();
   }
@@ -327,7 +341,10 @@ try {
     const pems = require('./selfcert')('motion-life.local', lanAddresses(), 3650);
     fs.writeFileSync(kf, pems.key); fs.writeFileSync(cf, pems.cert); fs.writeFileSync(ipf, ips);
   }
-  https.createServer({ key: fs.readFileSync(kf), cert: fs.readFileSync(cf) }, handler).listen(HTTPS_PORT, '0.0.0.0');
+  // HTTP/2: بدون حد الـ 6 اتصالات للمتصفح (كان يسبب تعليق النظام عند فتح عدة نوافذ/تبويبات)
+  const h2 = http2.createSecureServer({ key: fs.readFileSync(kf), cert: fs.readFileSync(cf), allowHTTP1: true }, handler);
+  h2.on('sessionError', () => {}); h2.on('error', e => console.error('https error', e.message));
+  h2.listen(HTTPS_PORT, '0.0.0.0');
   httpsOn = true;
 } catch (e) { console.log('   (HTTPS غير مفعّل: ' + e.message + ')'); }
 process.on('uncaughtException', e => console.error('error:', e && e.message));

@@ -30,7 +30,7 @@ const M = {
   on(fn) { this.listeners.push(fn); },
   emit(kind, info) { this.listeners.forEach(f => { try { f(kind, info || {}); } catch (e) { console.error(e); } }); },
   me: null,
-  sections() { if (this.role === 'therapist') return this.me && this.me.section ? [this.me.section] : []; return this.role === 'admin' ? ['women', 'men'] : this.role ? [this.role] : []; },
+  sections() { if (this.role === 'therapist') return this.me && this.me.perms && this.me.perms.bothSecs ? ['women', 'men'] : (this.me && this.me.section ? [this.me.section] : []); return this.role === 'admin' ? ['women', 'men'] : this.role ? [this.role] : []; },
   isTherapist() { return this.role === 'therapist'; },
   isManager() { return this.role === 'admin' || this.role === 'women' || this.role === 'men'; },
   label() { return this.role === 'therapist' ? (this.me && this.me.name || 'معالج') : (ROLES[this.role] || ''); },
@@ -115,7 +115,7 @@ M._loadLocal = function () {
   const secs = this.sections();
   ls.get('ml_patients', []).forEach(p => {
     if (!p.section) p.section = p.gender === 'ذكر' ? 'men' : 'women';   // ترحيل الملفات القديمة
-    if (secs.includes(p.section)) this.patients.set(p.id, p);
+    if (secs.includes(p.section)) this.patients.set(p.id, normP(p));
   });
   ls.get('ml_appts', []).forEach(a => { if (secs.includes(a.section)) this.appts.set(a.id, a); });
   const mt = ls.get('ml_meta', {}); ['women', 'men'].forEach(s => { if (mt[s]) this.meta[s] = mt[s]; });
@@ -142,7 +142,7 @@ M._startCloud = function () {
           if (ch.type === 'removed') map.delete(d.id);
           else if (cur && !remote) { /* our own write: local object is already up to date */ }
           else if (cur) { const dirty = this.dirty[d.id]; Object.keys(d).forEach(k => { if (!dirty || !dirty.has(k)) cur[k] = d[k]; }); }
-          else map.set(d.id, d);
+          else map.set(d.id, name === 'patients' ? normP(d) : d);
           ids.push(d.id);
         });
         this.emit('data', { kind: name, ids, remote });
@@ -154,6 +154,17 @@ M._startCloud = function () {
 
 /* ---------------- writes ---------------- */
 const clean = o => JSON.parse(JSON.stringify(o));
+/* ضمان اكتمال حقول ملف المريض (لملفات قديمة أو ناقصة) */
+function normP(p) {
+  if (!p || typeof p !== 'object') return p;
+  if (!Array.isArray(p.sessions)) p.sessions = [];
+  while (p.sessions.length < 22) p.sessions.push({ date: '', note: '', by: '' });
+  if (!Array.isArray(p.payments)) p.payments = [];
+  while (p.payments.length < 4) p.payments.push({ amount: '', date: '' });
+  ['painType', 'devices', 'exercises'].forEach(k => { if (!Array.isArray(p[k])) p[k] = []; });
+  return p;
+}
+M.normP = normP;
 M.savePatient = function (p, keys) {
   p.updated = new Date().toISOString();
   this.patients.set(p.id, p);
@@ -203,7 +214,7 @@ M._initServer = async function () {
   const t = this._token(), role = ls.get('ml_srv_role', null);
   if (!t || !(ROLES[role] || role === 'therapist')) return;
   this.role = role; this.me = ls.get('ml_srv_me', null);
-  try { const r = await this._req('GET', '/api/me'); if (r.status === 401) { this._clearSrv(); return; } if (r.ok && r.role) { this.role = r.role; this.me = { user: r.user, role: r.role, section: r.section, tid: r.tid, name: r.name }; ls.set('ml_srv_role', r.role); ls.set('ml_srv_me', this.me); } } catch (e) { /* الخادم غير متاح الآن: نعمل من النسخة المحفوظة */ }
+  try { const r = await this._req('GET', '/api/me'); if (r.status === 401) { this._clearSrv(); return; } if (r.ok && r.role) { this.role = r.role; this.me = { user: r.user, role: r.role, section: r.section, tid: r.tid, name: r.name, perms: r.perms || {} }; ls.set('ml_srv_role', r.role); ls.set('ml_srv_me', this.me); } } catch (e) { /* الخادم غير متاح الآن: نعمل من النسخة المحفوظة */ }
   await this._startServer();
 };
 M._clearSrv = function () { this.role = null; this.me = null; ls.set('ml_srv_token', null); ls.set('ml_srv_role', null); ls.set('ml_srv_me', null); };
@@ -211,7 +222,7 @@ M._srvLogin = async function (u, pw) {
   let r; try { r = await this._req('POST', '/api/login', { user: u, pass: pw }); } catch (e) { const er = new Error('net'); er.code = 'auth/network-request-failed'; throw er; }
   if (!r.ok) throw new Error('bad');
   ls.set('ml_srv_token', r.token); ls.set('ml_srv_role', r.role); this.role = r.role;
-  this.me = { user: r.user, role: r.role, section: r.section, tid: r.tid, name: r.name }; ls.set('ml_srv_me', this.me);
+  this.me = { user: r.user, role: r.role, section: r.section, tid: r.tid, name: r.name, perms: r.perms || {} }; ls.set('ml_srv_me', this.me);
   await this._startServer();
 };
 M._srvLogout = async function () { try { await this._req('POST', '/api/logout'); } catch (e) {} this._clearSrv(); this.patients.clear(); this.appts.clear(); };
@@ -219,7 +230,7 @@ M._applyAll = function (data) {
   this.patients.clear(); this.appts.clear();
   Object.keys(data || {}).forEach(sec => {
     const d = data[sec] || {};
-    Object.entries(d.patients || {}).forEach(([id, p]) => { p.id = id; p.section = sec; this.patients.set(id, p); });
+    Object.entries(d.patients || {}).forEach(([id, p]) => { p.id = id; p.section = sec; this.patients.set(id, normP(p)); });
     Object.entries(d.appts || {}).forEach(([id, a]) => { a.id = id; a.section = sec; this.appts.set(id, a); });
     if (d.meta && d.meta.config && d.meta.config.therapists) this.meta[sec] = d.meta.config;
   });
@@ -240,7 +251,8 @@ M._startServer = async function () {
 };
 M._pull = async function () {
   try { await this._flush(); const r = await this._req('GET', '/api/data');
-    if (r.ok) { this._applyAll(r.data); this._seq = r.seq || 0; this._applyOutbox(); this._saveCache(); this._setOnline(true); this.emit('data', { remote: true, ids: [...this.patients.keys()] }); }
+    if (r.ok) { if (r.me && r.me.role) { const ch = JSON.stringify(r.me) !== JSON.stringify(this.me); this.me = r.me; this.role = r.me.role; ls.set('ml_srv_me', r.me); ls.set('ml_srv_role', r.me.role); if (ch) this._meChanged = true; }
+      this._applyAll(r.data); this._seq = r.seq || 0; this._applyOutbox(); this._saveCache(); this._setOnline(true); this.emit('data', { remote: true, ids: [...this.patients.keys()] }); if (this._meChanged) { this._meChanged = false; this.emit('auth'); } }
     else if (r.status === 401) { this._clearSrv(); this.emit('auth'); }
   } catch (e) { this._setOnline(false); }
 };
@@ -257,11 +269,17 @@ M._applyMsg = function (m) {
   if (remote) this.emit('data', { kind: m.coll, ids: [m.id], remote: true });
 };
 M._connectEvents = function () {
+  if (!this._visHook) { this._visHook = true; document.addEventListener('visibilitychange', () => { if (document.hidden && this._pollCtl) { try { this._pollCtl.abort(); } catch (e) {} } }); }
   if (this._polling) return; this._polling = true;
   const loop = async () => {
     while (this.role && this.mode === 'server') {
+      if (document.hidden) {             // التبويبات المخفية لا تحجز اتصالاً مع الخادم
+        await new Promise(r => { const f = () => { if (!document.hidden) { document.removeEventListener('visibilitychange', f); r(); } }; document.addEventListener('visibilitychange', f); });
+        await this._pull(); continue;
+      }
       try {
         const ctl = new AbortController(); const to = setTimeout(() => ctl.abort(), 35000);
+        this._pollCtl = ctl;
         const r = await fetch('/api/changes?since=' + (this._seq || 0), { headers: { Authorization: 'Bearer ' + (this._token() || ''), 'X-Client': CID }, cache: 'no-store', signal: ctl.signal });
         clearTimeout(to);
         if (r.status === 401) { this._clearSrv(); this.emit('auth'); break; }
@@ -274,6 +292,7 @@ M._connectEvents = function () {
         this._seq = j.seq;
         this._flush();
       } catch (e) {
+        if (document.hidden) continue;
         await new Promise(r => setTimeout(r, 3000));
         await this._pull();          // يحدد حالة الاتصال بنفسه
       }

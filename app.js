@@ -22,6 +22,15 @@ const TH = () => !!(DB.isTherapist && DB.isTherapist());
 const myTid = () => (DB.me && DB.me.tid) || '';
 const myName = () => (DB.me && DB.me.name) || '';
 const secOf = () => TH() ? DB.me.section : DB.role;
+const can = k => !TH() || !!(DB.me && DB.me.perms && DB.me.perms[k]);
+const hidePhone = () => TH() && !can('phone');
+const lockPay = () => TH() && !can('pay');
+const limAppt = () => TH() && !can('allAppts');
+const multiSec = () => DB.sections().length > 1;
+const canStats = () => DB.role === 'admin' || (TH() && can('stats'));
+const pageOK = k => !TH() || ['home', 'settings', 'p', 'setup', ''].includes(k) || (k === 'stats' ? can('stats') : can(k));
+const PERM_LIST = [['appts', 'المواعيد'], ['patients', 'ملفات المرضى'], ['finance', 'المتابعة المالية'], ['stats', 'إحصائيات المعالجين'], ['library', 'مكتبة التمارين'], ['devices', 'الأجهزة والبروتوكولات'],
+  ['phone', 'رؤية أرقام هواتف المرضى'], ['pay', 'تعديل الدفعات (ورؤية كل الملفات في المتابعة المالية)'], ['allAppts', 'إدارة مواعيد كل المعالجين (حجز/تعديل/حذف)'], ['delFiles', 'حذف ملفات المرضى'], ['bothSecs', 'الوصول للقسمين (النساء والرجال)']];
 /* الحالة المالية لكل ملف */
 function payState(p) {
   const total = totalOf(p), paid = paidOf(p);
@@ -68,7 +77,7 @@ function newPatient(section, extra) {
 }
 function createPatient(extra) {
   const make = sec => { const p = newPatient(sec, extra); DB.savePatient(p); go('p/' + p.id + '/0'); return p; };
-  if (DB.role !== 'admin') return make(DB.sections()[0]);
+  if (!multiSec()) return make(DB.sections()[0]);
   openModal(`<div class="modal-h"><h3>ملف جديد — اختر القسم</h3><span class="spacer"></span><button class="x" id="mc">×</button></div>
     <div class="row"><button class="btn big sec-w" id="sw">👩 قسم النساء</button><button class="btn big sec-m" id="sm">👨 قسم الرجال</button></div>`);
   $('#mc').onclick = closeModal; $('#sw').onclick = () => { closeModal(); make('women'); }; $('#sm').onclick = () => { closeModal(); make('men'); };
@@ -97,7 +106,8 @@ function syncBadge() {
   return DB.online ? `<span class="sync on">● متزامن لحظياً</span>` : `<span class="sync wait">● بدون إنترنت — سيُرفع تلقائياً</span>`;
 }
 function shell(active, inner) {
-  const nav = [['home', 'الرئيسية'], ['appts', 'المواعيد'], ['patients', 'المرضى'], ['finance', 'المتابعة المالية']].concat(DB.role === 'admin' ? [['stats', 'إحصائيات المعالجين']] : [], [['library', 'مكتبة التمارين'], ['devices', 'الأجهزة والبروتوكولات'], ['settings', 'الإعدادات']]);
+  const nav = [['home', 'الرئيسية'], ['appts', 'المواعيد'], ['patients', 'المرضى'], ['finance', 'المتابعة المالية']].concat(canStats() ? [['stats', 'إحصائيات المعالجين']] : [], [['library', 'مكتبة التمارين'], ['devices', 'الأجهزة والبروتوكولات'], ['settings', 'الإعدادات']])
+    .filter(([k]) => !TH() || ['home', 'settings', 'stats'].includes(k) || can(k));
   return `<header class="topbar role-${secOf()}"><div class="topbar-in">
     <div class="brand" data-go="home"><b>Motion Life</b><small>مركز الأخصائي يزن جهاد العلواني</small></div>
     <div class="who"><span class="role-tag">${esc(DB.label())}</span><span id="syncB">${syncBadge()}</span></div>
@@ -114,16 +124,17 @@ function render() {
   if (!DB.role) { current = 'login'; app.innerHTML = loginView(); bindLogin(); return; }
   closeModal();
   current = h[0] || 'home';
+  if (!pageOK(h[0]) || (h[0] === 'p' && !can('patients'))) { app.innerHTML = shell('', `<div class="empty" style="padding:30px">🔒 لا تملك صلاحية الوصول لهذا القسم. تواصل مع الإدارة.</div>`); $$('[data-go]').forEach(b => b.addEventListener('click', () => go(b.dataset.go))); return; }
   if (h[0] === 'p' && getP(h[1])) { app.innerHTML = shell('patients', patientView(getP(h[1]), h[2] || '1')); bindPatient(getP(h[1]), h[2] || '1'); }
   else if (h[0] === 'p') { app.innerHTML = shell('patients', `<div class="empty">جارٍ تحميل الملف... إذا لم يظهر فقد يكون محذوفاً أو من قسم آخر.</div>`); }
   else if (h[0] === 'appts') { app.innerHTML = shell('appts', apptsView(h[1], h[2])); bindAppts(h[1], h[2]); }
   else if (h[0] === 'patients') { app.innerHTML = shell('patients', patientsView()); bindPatients(); }
   else if (h[0] === 'finance') { app.innerHTML = shell('finance', financeView()); bindFinance(); }
-  else if (h[0] === 'stats' && DB.role === 'admin') { app.innerHTML = shell('stats', statsView(h[1])); bindStats(h[1]); }
+  else if (h[0] === 'stats' && canStats()) { app.innerHTML = shell('stats', statsView(h[1])); bindStats(h[1]); }
   else if (h[0] === 'library') { app.innerHTML = shell('library', libraryView()); bindLibrary(); }
   else if (h[0] === 'devices') { app.innerHTML = shell('devices', devicesView()); bindDevices(); }
   else if (h[0] === 'settings') { app.innerHTML = shell('settings', settingsView()); bindSettings(); }
-  else { app.innerHTML = shell('home', homeView()); }
+  else { app.innerHTML = shell('home', homeView()); $$('.tile[data-go]').forEach(t => { if (!pageOK(t.dataset.go)) t.remove(); }); if (TH() && !can('patients') && $('#newP')) $('#newP').remove(); }
   $$('[data-go]').forEach(b => b.addEventListener('click', () => go(b.dataset.go)));
   window.scrollTo(0, 0);
 }
@@ -182,8 +193,8 @@ function pCard(p) {
   const ini = (p.name || '؟').trim().charAt(0);
   const done = p.sessions.filter(s => s.date).length;
   return `<div class="pcard" data-id="${p.id}"><div class="av">${esc(ini)}</div><div style="flex:1">
-    <b>${esc(p.name || 'بدون اسم')}</b> ${payBadge(p)}<div class="m">رقم الملف: ${esc(p.fileNo)} ·${TH() ? '' : ' ' + esc(p.phone || '—') + ' ·'} ${esc(p.complaint ? p.complaint.slice(0, 40) : '')}</div></div>
-    ${DB.role === 'admin' ? `<span class="badge sec-${p.section}">${SEC[p.section] || ''}</span>` : ''}<span class="badge">${done} / 22 جلسة</span></div>`;
+    <b>${esc(p.name || 'بدون اسم')}</b> ${payBadge(p)}<div class="m">رقم الملف: ${esc(p.fileNo)} ·${hidePhone() ? '' : ' ' + esc(p.phone || '—') + ' ·'} ${esc(p.complaint ? p.complaint.slice(0, 40) : '')}</div></div>
+    ${multiSec() ? `<span class="badge sec-${p.section}">${SEC[p.section] || ''}</span>` : ''}<span class="badge">${done} / 22 جلسة</span></div>`;
 }
 
 /* ---------- patients list ---------- */
@@ -210,7 +221,7 @@ const ta = (k, rows, v) => `<textarea class="lined" data-k="${k}" rows="${rows}"
 const PAIN_C = ['#2e9e5b','#4caf50','#7cb342','#c0ca33','#fdd835','#fbc02d','#ffa000','#f57c00','#ef6c00','#e64a19','#c62828'];
 
 function patientView(p, tab) {
-  const tabs = `<div class="pid-bar"><span class="pid-name">👤 <b data-live="name">${esc(p.name || 'مريض جديد')}</b></span><span>رقم الملف: <b data-live="fileNo">${esc(p.fileNo)}</b></span><span id="payB">${payBadge(p)}</span>${DB.role === 'admin' ? `<span class="badge sec-${p.section}">${SEC[p.section]}</span>` : ''}</div>
+  const tabs = `<div class="pid-bar"><span class="pid-name">👤 <b data-live="name">${esc(p.name || 'مريض جديد')}</b></span><span>رقم الملف: <b data-live="fileNo">${esc(p.fileNo)}</b></span><span id="payB">${payBadge(p)}</span>${multiSec() ? `<span class="badge sec-${p.section}">${SEC[p.section]}</span>` : ''}</div>
   ${alertsHTML(p)}
   <div class="ptabs">
     <button class="tab ${tab === '0' ? 'on' : ''}" data-go="p/${p.id}/0">📝 الاستبيان الطبي السريع</button>
@@ -219,7 +230,7 @@ function patientView(p, tab) {
     <span class="spacer"></span><span class="saved" id="sv"></span>
     <button class="btn ghost sm" id="prt">🖨️ طباعة الملف</button>
     <button class="btn ghost sm" id="prtEx">🖨️ ورقة تمارين للمريض</button>
-    ${TH() ? '' : '<button class="btn danger sm" id="delP">حذف</button>'}</div>`;
+    ${TH() && !can('delFiles') ? '' : '<button class="btn danger sm" id="delP">حذف</button>'}</div>`;
   return tabs + (tab === '2' ? page2(p) : tab === '0' ? page0(p) : page1(p));
 }
 
@@ -278,7 +289,7 @@ function page0(p) {
   return `<div class="sheet iq">${head('استبيان المريض السريع — التاريخ الطبي', 'قبل الفحص الأولي • الوقت المستهدف: دقيقتان')}
   <div class="box"><div class="box-t">١ | معلومات أساسية</div><div class="box-b grid2">
     ${inp('name', 'الاسم الكامل', 'text', p.name)}<div class="f"><label>العمر:</label><input data-k="age" type="number" value="${esc(p.age)}"><span>سنة</span></div>
-    ${TH() ? '' : inp('phone', 'رقم الهاتف', 'tel', p.phone)}${inp('iq_date', 'التاريخ', 'date', p.iq_date || today())}
+    ${hidePhone() ? '' : inp('phone', 'رقم الهاتف', 'tel', p.phone)}${inp('iq_date', 'التاريخ', 'date', p.iq_date || today())}
   </div></div>
   <div class="box"><div class="box-t">٢ | سبب الزيارة</div><div class="box-b">
     <div class="grid2">${inp('iq_where', 'وين المشكلة الأساسية؟', 'text', p.iq_where)}${inp('iq_since', 'من إمتى؟', 'text', p.iq_since)}</div>
@@ -329,7 +340,7 @@ function page1(p) {
   <div class="grid3" style="margin-bottom:16px">
     ${inp('name', 'الاسم الكامل', 'text', p.name)}${inp('age', 'العمر', 'number', p.age)}
     <div class="f"><label>الجنس:</label><span><label class="chk"><input type="radio" name="g" data-k="gender" value="ذكر" ${p.gender === 'ذكر' ? 'checked' : ''}>ذكر</label><label class="chk"><input type="radio" name="g" data-k="gender" value="أنثى" ${p.gender === 'أنثى' ? 'checked' : ''}>أنثى</label></span></div>
-    ${TH() ? '' : inp('phone', 'رقم الهاتف', 'tel', p.phone)}${inp('job', 'المهنة', 'text', p.job)}${inp('evalDate', 'تاريخ التقييم', 'date', p.evalDate)}
+    ${hidePhone() ? '' : inp('phone', 'رقم الهاتف', 'tel', p.phone)}${inp('job', 'المهنة', 'text', p.job)}${inp('evalDate', 'تاريخ التقييم', 'date', p.evalDate)}
   </div>
   <div class="box"><div class="box-t">الشكوى الرئيسية والتاريخ الصحي</div><div class="box-b">
     <div class="grid2"><div class="fcol"><span class="lbl">الشكوى الرئيسية</span>${ta('complaint', 2, p.complaint)}</div>
@@ -353,7 +364,7 @@ function page1(p) {
   <div class="row"><span class="spacer"></span><button class="btn big" data-go="p/${p.id}/2">التالي: الخطة العلاجية ←</button></div>`;
 }
 
-const paidOf = p => p.payments.reduce((a, x) => a + num(x.amount), 0) + (p.payMode === 'session' ? p.sessions.reduce((a, x) => a + num(x.amount), 0) : 0);
+const paidOf = p => (p.payments || []).reduce((a, x) => a + num(x.amount), 0) + (p.payMode === 'session' ? (p.sessions || []).reduce((a, x) => a + num(x.amount), 0) : 0);
 const totalOf = p => num(p.agreedTotal) || (p.payMode === 'session' ? num(p.sessionPrice) * num(p.agreedSessions) : 0);
 const remainOf = p => totalOf(p) ? fmt(totalOf(p) - paidOf(p)) : '';
 function page2(p) {
@@ -362,7 +373,7 @@ function page2(p) {
     ${p.sessions.slice(from, to).map((s, j) => { const i = from + j; return `<tr><td class="n">${i + 1}</td>
       <td><input type="date" data-s="${i}" data-f="date" value="${esc(s.date)}"></td>
       <td><input data-s="${i}" data-f="note" value="${esc(s.note)}"></td>
-      <td><input data-s="${i}" data-f="by" value="${esc(s.by)}" style="width:90px"></td>${ps ? `<td><input data-s="${i}" data-f="amount" value="${esc(s.amount || '')}" inputmode="numeric" style="width:70px" ${TH() ? 'disabled title="قسم الدفعات للإدارة فقط"' : ''}></td>` : ''}</tr>`; }).join('')}</tbody></table>`;
+      <td><input data-s="${i}" data-f="by" value="${esc(s.by)}" style="width:90px"></td>${ps ? `<td><input data-s="${i}" data-f="amount" value="${esc(s.amount || '')}" inputmode="numeric" style="width:70px" ${lockPay() ? 'disabled title="قسم الدفعات للإدارة فقط"' : ''}></td>` : ''}</tr>`; }).join('')}</tbody></table>`;
   const paid = paidOf(p);
   const hist = patientAppts(p.id);
   return `<div class="sheet">${head('الخطة العلاجية ومتابعة الجلسات', 'حتى 22 جلسة')}
@@ -386,7 +397,7 @@ function page2(p) {
     <div class="fcol"><span class="lbl">التقييم بعد الجلسة السادسة:</span>${ta('eval6', 2, p.eval6)}</div>
     <div class="fcol"><span class="lbl">التقييم بعد الجلسة الثانية عشرة:</span>${ta('eval12', 2, p.eval12)}</div>
   </div>
-  <fieldset class="payarea" ${TH() ? 'disabled' : ''}>${TH() ? '<div class="alert amber" style="margin-bottom:8px">🔒 قسم الدفعات للعرض فقط — التعديل للإدارة والاستقبال.</div>' : ''}
+  <fieldset class="payarea" ${lockPay() ? 'disabled' : ''}>${lockPay() ? '<div class="alert amber" style="margin-bottom:8px">🔒 قسم الدفعات للعرض فقط — التعديل للإدارة والاستقبال.</div>' : ''}
   <div class="paymode"><span class="lbl">طريقة الدفع:</span>
     <label class="chk"><input type="radio" name="pm" data-k="payMode" value="" ${ps ? '' : 'checked'}>دفعات</label>
     <label class="chk"><input type="radio" name="pm" data-k="payMode" value="session" ${ps ? 'checked' : ''}>مبلغ مقابل كل جلسة</label>
@@ -761,7 +772,7 @@ function apptsView(sec, date) {
   sec = DB.sections().includes(sec) ? sec : DB.sections()[0]; date = /^\d{4}-\d{2}-\d{2}$/.test(date || '') ? date : today();
   const [a, b] = SEC_HOURS[sec];
   return `<div class="appt-head sec-${sec}">
-    ${DB.role === 'admin' ? `<div class="sec-tabs">${['women', 'men'].map(s => `<button class="sec-tab ${s === sec ? 'on' : ''} t-${s}" data-go="appts/${s}/${date}">${s === 'women' ? '👩' : '👨'} ${SEC[s]} <small>${t12(SEC_HOURS[s][0] + ':00')} – ${t12(SEC_HOURS[s][1] + ':00')}</small></button>`).join('')}</div>` : ''}
+    ${multiSec() ? `<div class="sec-tabs">${['women', 'men'].map(s => `<button class="sec-tab ${s === sec ? 'on' : ''} t-${s}" data-go="appts/${s}/${date}">${s === 'women' ? '👩' : '👨'} ${SEC[s]} <small>${t12(SEC_HOURS[s][0] + ':00')} – ${t12(SEC_HOURS[s][1] + ':00')}</small></button>`).join('')}</div>` : ''}
     <h2>${sec === 'women' ? '👩' : '👨'} مواعيد ${SEC[sec]} <small>من ${t12(a + ':00')} حتى ${t12(b + ':00')} · موعد كل 10 دقائق</small></h2>
     <div class="datebar">
       <button class="btn ghost" data-go="appts/${sec}/${addDays(date, -1)}">→ اليوم السابق</button>
@@ -823,28 +834,28 @@ function apptModal(a) {
   const sec = a.section;
   const pts = allP().filter(p => p.section === sec);
   let pid = a.patientId, st = a.status, tid = (thOf(sec, a) || {}).id || a.tid || '';
-  if (TH() && isNew) tid = myTid();
-  const mine = !TH() || tid === myTid();
-  const ro = TH() && !isNew && !mine;                                        // موعد معالج آخر: عرض فقط
-  const canDel = !isNew && (!TH() || (mine && (!a.createdBy || a.createdBy === DB.me.user)));
+  if (limAppt() && isNew) tid = myTid();
+  const mine = !limAppt() || tid === myTid();
+  const ro = limAppt() && !isNew && !mine;                                        // موعد معالج آخر: عرض فقط
+  const canDel = !isNew && (!limAppt() || (mine && (!a.createdBy || a.createdBy === DB.me.user)));
   openModal(`<div class="modal-h"><h3>${isNew ? 'حجز موعد جديد' : ro ? 'تفاصيل الموعد (عرض فقط)' : 'تفاصيل الموعد'} — ${SEC[sec]}</h3><span class="spacer"></span><button class="x" id="mc">×</button></div>
     <div class="pform">
       <div class="fcol" style="grid-column:1/-1;position:relative"><span class="lbl">اسم المريض <small class="hint">اكتب أول الاسم وستظهر ملفات المرضى للاختيار</small></span>
         <input id="an" value="${esc(a.name)}" autocomplete="off" placeholder="مثال: أحمد"><div class="sugg hidden" id="sg"></div></div>
       <div class="fcol" style="grid-column:1/-1" id="linkp"></div>
-      <div class="fcol" ${TH() ? 'style="display:none"' : ''}><span class="lbl">رقم الهاتف</span><input id="ap" value="${esc(a.phone)}" dir="ltr" inputmode="tel"></div>
+      <div class="fcol" ${hidePhone() ? 'style="display:none"' : ''}><span class="lbl">رقم الهاتف</span><input id="ap" value="${esc(a.phone)}" dir="ltr" inputmode="tel"></div>
       <div class="fcol"><span class="lbl">رقم الجلسة</span><select id="asn" class="sel"><option value="">—</option>${Array.from({ length: 22 }, (_, i) => `<option value="${i + 1}">الجلسة ${i + 1}</option>`).join('')}</select></div>
       <div class="fcol"><span class="lbl">التاريخ</span><input type="date" id="ad" value="${a.date}"></div>
       <div class="fcol"><span class="lbl">الوقت</span><select id="at" class="sel">${slotsOf(sec).map(t => `<option value="${t}" ${t === a.time ? 'selected' : ''}>${t12(t)}</option>`).join('')}</select></div>
       <div class="fcol" style="grid-column:1/-1"><span class="lbl">${sec === 'women' ? 'المعالجة' : 'المعالج'}</span>
-        <div class="thpick">${therapists(sec).filter(t => !TH() || t.id === tid).map(t => `<button type="button" class="thb ${t.id === tid ? 'on' : ''}" data-tid="${t.id}" style="--c:${t.color}"><span class="dot" style="background:${t.color}"></span>${esc(t.name)}</button>`).join('')}</div></div>
+        <div class="thpick">${therapists(sec).filter(t => !limAppt() || t.id === tid).map(t => `<button type="button" class="thb ${t.id === tid ? 'on' : ''}" data-tid="${t.id}" style="--c:${t.color}"><span class="dot" style="background:${t.color}"></span>${esc(t.name)}</button>`).join('')}</div></div>
       <div class="fcol"><span class="lbl">ملاحظة (نوع الجلسة...)</span><input id="ano" value="${esc(a.note)}"></div>
-      <div class="fcol" ${TH() ? 'style="display:none"' : ''}><span class="lbl">المبلغ المدفوع لهذه الجلسة <small class="hint">(اختياري)</small></span><input id="aam" value="${esc(a.amount)}" inputmode="numeric"></div>
+      <div class="fcol" ${lockPay() ? 'style="display:none"' : ''}><span class="lbl">المبلغ المدفوع لهذه الجلسة <small class="hint">(اختياري)</small></span><input id="aam" value="${esc(a.amount)}" inputmode="numeric"></div>
       ${isNew ? '' : `<div class="fcol" style="grid-column:1/-1"><span class="lbl">حالة الموعد</span><div class="stbtns">${Object.entries(ST).map(([k, v]) => `<button type="button" class="stb st-${k} ${a.status === k ? 'on' : ''}" data-st="${k}">${v}</button>`).join('')}</div></div>`}
     </div>
     <div id="histBox"></div>
     ${ro ? '<div class="alert amber" style="margin-top:10px">🔒 هذا الموعد لمعالج آخر — يمكنك مشاهدته فقط.</div>' : ''}
-    ${!ro && TH() && !isNew && !canDel ? '<div class="alert amber" style="margin-top:10px">🔒 هذا الموعد أضافه مستخدم آخر — يمكنك تعديله لكن لا يمكنك حذفه.</div>' : ''}
+    ${!ro && limAppt() && !isNew && !canDel ? '<div class="alert amber" style="margin-top:10px">🔒 هذا الموعد أضافه مستخدم آخر — يمكنك تعديله لكن لا يمكنك حذفه.</div>' : ''}
     <div class="modal-f">${ro ? '' : `<button class="btn big" id="ok">${isNew ? '✓ حجز الموعد' : 'حفظ'}</button>`}<button class="btn ghost" id="cn">${ro ? 'إغلاق' : 'إلغاء'}</button><span class="spacer"></span>${canDel ? '<button class="btn danger" id="del">حذف الموعد</button>' : ''}${!isNew && a.createdBy ? `<small class="hint">أضافه: ${esc(a.createdBy)}</small>` : ''}</div>`);
   if (ro) $$('#modalBox input, #modalBox select, #modalBox .thb, #modalBox .stb').forEach(x => x.disabled = true);
   $('#asn').value = a.sessionNo || (isNew && pid ? nextSessionNo(pid) : a.sessionNo || '');
@@ -861,7 +872,7 @@ function apptModal(a) {
   $('#an').oninput = () => { const q = norm($('#an').value.trim()); pid = '';
     const m = q ? pts.filter(p => norm(p.name).split(/\s+/).some(w => w.startsWith(q)) || norm(p.name).startsWith(q) || (p.phone || '').includes(q)).slice(0, 8) : [];
     const last = id => { const l = patientAppts(id)[0]; return l ? 'آخر موعد ' + l.date : 'لا مواعيد سابقة'; };
-    $('#sg').innerHTML = q ? m.map(p => `<button type="button" data-pid="${p.id}"><b>${esc(p.name)}</b> <small>ملف ${esc(p.fileNo)}${TH() ? '' : ' · ' + esc(p.phone || '—')} · ${last(p.id)}</small></button>`).join('') +
+    $('#sg').innerHTML = q ? m.map(p => `<button type="button" data-pid="${p.id}"><b>${esc(p.name)}</b> <small>ملف ${esc(p.fileNo)}${hidePhone() ? '' : ' · ' + esc(p.phone || '—')} · ${last(p.id)}</small></button>`).join('') +
       `<button type="button" class="sg-new" id="sgNew">➕ إضافة مريض جديد باسم «${esc($('#an').value.trim())}»</button>` : '';
     $('#sg').classList.toggle('hidden', !q);
     $$('[data-pid]', $('#sg')).forEach(b => b.onclick = () => pick(getP(b.dataset.pid)));
@@ -874,12 +885,12 @@ function apptModal(a) {
     if (!pid) { const np = newPatient(sec, { name, phone: $('#ap').value.trim() }); DB.savePatient(np); pid = np.id; }
     const th = therapists(sec).find(t => t.id === tid);
     const o = Object.assign({}, a, { id: a.id || uid('a'), created: a.created || new Date().toISOString(), date: $('#ad').value || a.date, time: $('#at').value,
-      name, phone: TH() ? (a.phone || '') : $('#ap').value.trim(), tid: tid || '', createdBy: a.createdBy || (DB.me && DB.me.user) || DB.role || '', by: th ? th.name : '', note: $('#ano').value.trim(), status: st, patientId: pid, sessionNo: $('#asn').value, amount: $('#aam').value.trim() });
+      name, phone: hidePhone() ? (a.phone || '') : $('#ap').value.trim(), tid: tid || '', createdBy: a.createdBy || (DB.me && DB.me.user) || DB.role || '', by: th ? th.name : '', note: $('#ano').value.trim(), status: st, patientId: pid, sessionNo: $('#asn').value, amount: $('#aam').value.trim() });
     DB.saveAppt(o); a.id = o.id; a.created = o.created;
     syncSessionRow(o);
     if (liveRedraw && current === 'appts') liveRedraw(); return true;
   }
-  if ($('#ok')) $('#ok').onclick = () => { if (TH() && tid !== myTid()) return toast('يمكنك حجز المواعيد باسمك فقط'); if (save()) { closeModal(); toast(isNew ? 'تم حجز الموعد وربطه بملف المريض' : 'تم الحفظ'); } };
+  if ($('#ok')) $('#ok').onclick = () => { if (limAppt() && tid !== myTid()) return toast('يمكنك حجز المواعيد باسمك فقط'); if (save()) { closeModal(); toast(isNew ? 'تم حجز الموعد وربطه بملف المريض' : 'تم الحفظ'); } };
   $('#cn').onclick = closeModal; $('#mc').onclick = closeModal;
   if ($('#del')) $('#del').onclick = () => { DB.deleteAppt(a); closeModal(); if (liveRedraw) liveRedraw(); toast('تم حذف الموعد'); };
   if (isNew) $('#an').focus();
@@ -906,13 +917,13 @@ function patientTherapists(p) {
 }
 function financeView() {
   return `<div class="row"><h2 style="margin:0;color:var(--navy)">💰 المتابعة المالية</h2><span class="spacer"></span><span class="badge" id="finCnt"></span></div>
-  <div class="help" style="margin-top:10px">${TH() ? 'تظهر هنا ملفات مرضاك (المرتبطين بك بجلسة واحدة أو أكثر) التي لم تكتمل دفعاتها.' : 'تظهر هنا كل الملفات التي لم تكتمل دفعاتها من المبلغ الإجمالي المتفق عليه.'} يختفي الملف من هذه القائمة تلقائياً عند اكتمال الدفع.</div>
+  <div class="help" style="margin-top:10px">${lockPay() ? 'تظهر هنا ملفات مرضاك (المرتبطين بك بجلسة واحدة أو أكثر) التي لم تكتمل دفعاتها.' : 'تظهر هنا كل الملفات التي لم تكتمل دفعاتها من المبلغ الإجمالي المتفق عليه.'} يختفي الملف من هذه القائمة تلقائياً عند اكتمال الدفع.</div>
   <input class="search" id="fq" placeholder="🔍 ابحث بالاسم أو رقم الملف" style="margin:6px 0 12px"><div id="finList"></div>`;
 }
 function bindFinance() {
   const draw = () => {
     const q = $('#fq').value.trim();
-    const all = allP().filter(p => !TH() || linkedTo(p, myTid(), myName()));
+    const all = allP().filter(p => !lockPay() || linkedTo(p, myTid(), myName()));
     const due = all.filter(p => payState(p).status === 'due' && (!q || (p.name + ' ' + p.fileNo).includes(q))).sort((a, b) => payState(b).remain - payState(a).remain);
     const none = all.filter(p => payState(p).status === 'none').length;
     const totalRemain = due.reduce((s, p) => s + payState(p).remain, 0);
@@ -922,7 +933,7 @@ function bindFinance() {
       const L = due.filter(p => p.section === sec); if (!L.length) return secs.length > 1 ? `<h3 class="fin-sec">${SEC[sec]}</h3><div class="empty">لا توجد مبالغ متبقية ✓</div>` : '<div class="empty">لا توجد ملفات عليها مبالغ متبقية ✓</div>';
       return (secs.length > 1 ? `<h3 class="fin-sec">${SEC[sec]}</h3>` : '') + `<div class="fin-tbl"><table class="slog fin"><thead><tr><th>المريض</th><th>رقم الملف</th><th>المتفق عليه</th><th>المدفوع</th><th>المتبقي</th><th>آخر دفعة</th><th>الجلسات</th><th>المعالجون</th></tr></thead><tbody>${L.map(p => { const st = payState(p);
         return `<tr data-open="${p.id}"><td><span class="pay-dot due">●</span> <b>${esc(p.name || 'بدون اسم')}</b></td><td>${esc(p.fileNo)}</td><td>${fmt(st.total)}</td><td>${fmt(st.paid)}</td><td class="rem">${fmt(st.remain)}</td><td>${esc(lastPayDate(p) || '—')}</td><td>${sessionsOf(p).length}${p.agreedSessions ? ' / ' + esc(p.agreedSessions) : ''}</td><td>${patientTherapists(p).map(esc).join('، ') || '—'}</td></tr>`; }).join('')}</tbody></table></div>`;
-    }).join('') + (none && !TH() ? `<p class="hint" style="margin-top:12px">ℹ️ يوجد ${none} ملف لم يُكتب فيه «المبلغ الإجمالي المتفق عليه» أو «سعر الجلسة»، لذلك لا تظهر في المتابعة المالية.</p>` : '');
+    }).join('') + (none && !lockPay() ? `<p class="hint" style="margin-top:12px">ℹ️ يوجد ${none} ملف لم يُكتب فيه «المبلغ الإجمالي المتفق عليه» أو «سعر الجلسة»، لذلك لا تظهر في المتابعة المالية.</p>` : '');
     $$('[data-open]').forEach(r => r.onclick = () => go('p/' + r.dataset.open + '/2'));
   };
   $('#fq').oninput = draw; draw(); liveRedraw = draw;
@@ -989,6 +1000,28 @@ function settingsView() {
   <div class="sheet"><button class="btn ghost" id="out">🚪 تسجيل الخروج</button></div>`;
 }
 let accCache = null;
+const permLevel = p => !p ? '' : PERM_LIST.every(([k]) => p[k]) ? 'full' : (p.phone || p.pay || p.allAppts || p.delFiles || p.bothSecs || p.stats) ? 'extra' : 'basic';
+const permLabel = p => ({ full: 'كاملة', extra: 'مخصصة', basic: 'أساسية' })[permLevel(p)] || 'أساسية';
+function permsModal(u) {
+  if (!u) return;
+  const p = Object.assign({}, u.perms || {});
+  const draw = () => {
+    openModal(`<div class="modal-h"><h3>🔐 صلاحيات ${esc(u.name)} <small class="hint" dir="ltr">${esc(u.user)}</small></h3><span class="spacer"></span><button class="x" id="mc">×</button></div>
+      <div class="row" style="margin-bottom:10px"><button class="btn" id="pFull">✓ صلاحية كاملة لكل الأقسام</button><button class="btn light" id="pBasic">↺ الصلاحيات الأساسية للمعالج</button></div>
+      <div class="lbl-s">الأقسام التي تظهر له:</div>
+      <div class="permgrid">${PERM_LIST.slice(0, 6).map(([k, t]) => `<label class="chk perm"><input type="checkbox" data-pk="${k}" ${p[k] ? 'checked' : ''}>${t}</label>`).join('')}</div>
+      <div class="lbl-s" style="margin-top:10px">صلاحيات إضافية:</div>
+      <div class="permgrid">${PERM_LIST.slice(6).map(([k, t]) => `<label class="chk perm"><input type="checkbox" data-pk="${k}" ${p[k] ? 'checked' : ''}>${t}</label>`).join('')}</div>
+      <p class="hint">بدون «إدارة مواعيد كل المعالجين»: يحجز ويعدّل مواعيده فقط ولا يحذف إلا ما أضافه بنفسه. تُطبَّق الصلاحيات فوراً على الخادم، وتظهر عنده عند تحديث الصفحة.</p>
+      <div class="modal-f"><button class="btn big" id="ok">حفظ الصلاحيات</button><button class="btn ghost" id="cn">إلغاء</button></div>`);
+    $$('[data-pk]').forEach(c => c.onchange = () => { p[c.dataset.pk] = c.checked; });
+    $('#pFull').onclick = () => { PERM_LIST.forEach(([k]) => p[k] = true); draw(); };
+    $('#pBasic').onclick = () => { Object.assign(p, { appts: true, patients: true, finance: true, library: true, devices: true, stats: false, phone: false, pay: false, allAppts: false, delFiles: false, bothSecs: false }); draw(); };
+    $('#mc').onclick = $('#cn').onclick = closeModal;
+    $('#ok').onclick = async () => { const r = await DB.userAction({ action: 'perms', user: u.user, perms: p }); if (r.ok) { closeModal(); toast('تم حفظ صلاحيات ' + u.name); bindTherapists(); } else toast('تعذّر الحفظ'); };
+  };
+  draw();
+}
 function showPw(user, pw) { openModal(`<div class="modal-h"><h3>بيانات الدخول</h3><span class="spacer"></span><button class="x" id="mc">×</button></div>
   <div class="help" style="font-size:18px">اسم المستخدم: <b dir="ltr">${esc(user)}</b><br>كلمة المرور: <b dir="ltr">${esc(pw)}</b></div><p class="hint">أعطها لصاحب الحساب، ويستطيع تغييرها من الإعدادات بعد الدخول.</p>`); $('#mc').onclick = closeModal; }
 function makeAccount(sec, t) {
@@ -1008,8 +1041,9 @@ function bindTherapists() {
       <b>${esc(t.name)}</b><span class="acc" data-acc="${sec}|${t.id}"></span><span class="spacer"></span><button class="x" data-thdel="${sec}|${t.id}" title="حذف">×</button></div>`).join('') : '<div class="empty">لا يوجد أسماء بعد</div>';
   });
   if (DB.mode === 'server') DB.users().then(us => { accCache = us; $$('[data-acc]').forEach(el => { const [sec, id] = el.dataset.acc.split('|'); const t = therapists(sec).find(x => x.id === id); const u = us.find(x => x.section === sec && (x.tid === id || x.name === (t && t.name)));
-    el.innerHTML = u ? `<small dir="ltr" class="accu">👤 ${esc(u.user)}</small>${u.initialPw ? `<small class="accp">كلمة المرور: <b dir="ltr">${esc(u.initialPw)}</b></small>` : '<small class="hint">(غيّر كلمة مروره)</small>'}<button class="btn light sm" data-reset="${esc(u.user)}">كلمة مرور جديدة</button>`
+    el.innerHTML = u ? `<small dir="ltr" class="accu">👤 ${esc(u.user)}</small>${u.initialPw ? `<small class="accp">كلمة المرور: <b dir="ltr">${esc(u.initialPw)}</b></small>` : '<small class="hint">(غيّر كلمة مروره)</small>'}<button class="btn light sm" data-reset="${esc(u.user)}">كلمة مرور جديدة</button>${DB.role === 'admin' ? `<button class="btn sm perm-btn ${permLevel(u.perms)}" data-perm="${esc(u.user)}">🔐 الصلاحيات: ${permLabel(u.perms)}</button>` : ''}`
       : `<button class="btn sm" data-mkacc="${sec}|${id}">➕ إنشاء حساب دخول</button>`; });
+    $$('[data-perm]').forEach(b => b.onclick = () => permsModal(us.find(x => x.user === b.dataset.perm)));
     $$('[data-reset]').forEach(b => b.onclick = async () => { const r = await DB.userAction({ action: 'reset', user: b.dataset.reset }); if (r.ok) { showPw(r.user, r.password); bindTherapists(); } else toast('تعذّر'); });
     $$('[data-mkacc]').forEach(b => b.onclick = () => { const [sec, id] = b.dataset.mkacc.split('|'); const t = therapists(sec).find(x => x.id === id); makeAccount(sec, t); }); });
   $$('[data-thc]').forEach(i => i.onchange = () => { const [sec, id] = i.dataset.thc.split('|'); const t = therapists(sec).find(x => x.id === id); if (t) { t.color = i.value; DB.saveMeta(sec); bindTherapists(); } });
@@ -1172,6 +1206,15 @@ function printPatient(p, exOnly) {
 }
 
 /* ---------- live updates ---------- */
+/* إعادة الرسم بهدوء: تجميع التحديثات المتتالية، وعدم إعادة الرسم أثناء لمس/نقر المستخدم (كان يضيّع النقرات) */
+let ptrDown = false, rdT = null, rdFn = null;
+document.addEventListener('pointerdown', () => { ptrDown = true; }, true);
+['pointerup', 'pointercancel'].forEach(ev => document.addEventListener(ev, () => setTimeout(() => { ptrDown = false; }, 400), true));
+function softRedraw(fn) {
+  rdFn = fn; clearTimeout(rdT);
+  const run = () => { if (ptrDown || (document.activeElement && /INPUT|TEXTAREA|SELECT/.test(document.activeElement.tagName) && document.activeElement.closest('#app'))) { rdT = setTimeout(run, 500); return; } const f = rdFn; rdFn = null; f && f(); };
+  rdT = setTimeout(run, 300);
+}
 DB.on((kind, info) => {
   if (kind === 'auth') return render();
   if (kind === 'denied') { toast('🔒 لا تملك صلاحية لهذا التعديل'); DB._pull && DB._pull(); return; }
@@ -1184,8 +1227,8 @@ DB.on((kind, info) => {
     if (info.remote && info.ids && info.ids.includes(id) && livePatient && livePatient.id === id) livePatient.apply();
     return;
   }
-  if (['patients', 'appts', 'settings', 'finance', 'stats'].includes(current) && liveRedraw) return liveRedraw();
-  if (current === 'home' && $('#modal').classList.contains('hidden')) render();
+  if (['patients', 'appts', 'settings', 'finance', 'stats'].includes(current) && liveRedraw) return softRedraw(() => liveRedraw && liveRedraw());
+  if (current === 'home') softRedraw(() => { if (current === 'home' && $('#modal').classList.contains('hidden')) render(); });
 });
 setInterval(() => { if (current === 'appts' && liveRedraw && $('#modal').classList.contains('hidden')) liveRedraw(); }, 60000);
 DB.init().then(render);
