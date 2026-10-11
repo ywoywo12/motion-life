@@ -369,3 +369,38 @@ table.sess input[type=date]{min-width:120px}
   .hx-i img{width:120px;height:110px;flex:none}
   .hx-i b{font-size:10.5pt;color:var(--navy)}
 }
+
+/* ---------- payment badge, risks, finance, stats ---------- */
+.pay-dot{font-size:12px;font-weight:800;padding:1px 8px;border-radius:999px;white-space:nowrap;display:inline-block;vertical-align:middle}
+.pay-dot.due{background:#fdecea;color:#c62828}
+.pay-dot.done{background:#e7f6ee;color:#1e8e5a}
+.riskbox{border:2px solid #f3b8b1;border-radius:12px;background:#fff7f6;padding:10px 14px;margin-bottom:14px}
+.riskbox-t{font-weight:800;color:#8f1d12;margin-bottom:6px}
+.risk{border-inline-start:4px solid #e0761f;padding:4px 10px;margin:6px 0;display:flex;flex-direction:column;gap:2px;font-size:15px}
+.risk.red{border-color:#c62828}
+.risk b{color:#5a1209}
+.risk span{color:#5f4a3f;font-size:14px}
+table.slog{width:100%;border-collapse:collapse;font-size:14px;background:#fff}
+table.slog th{background:#eef5f7;color:var(--navy);padding:6px 8px;text-align:right;font-weight:800;border-bottom:1.5px solid var(--line)}
+table.slog td{padding:6px 8px;border-bottom:1px solid #e6edf1}
+.box-t .cnt{background:#fff;border-radius:999px;padding:0 10px;font-size:13px;margin-inline-start:8px}
+.fin-sum{background:#fdecea;border:1.5px solid #f3b8b1;color:#8f1d12;border-radius:10px;padding:10px 14px;margin-bottom:10px;font-size:16px}
+.fin-sec{color:var(--navy);margin:16px 0 8px}
+.fin-tbl{overflow-x:auto;border:1.5px solid var(--line);border-radius:10px}
+table.fin tr{cursor:pointer} table.fin tr:hover td{background:#f7fbfc}
+table.fin td.rem{color:#c62828;font-weight:800}
+fieldset.payarea{border:0;margin:0;padding:0;min-width:0}
+fieldset.payarea[disabled] input{background:#f4f6f8;color:#5f7180}
+.stgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:10px}
+.stcard{background:#fff;border:1.5px solid var(--line);border-top:5px solid var(--c);border-radius:12px;padding:10px 12px}
+.sth{display:flex;align-items:center;gap:8px}
+.stn{font-size:28px;font-weight:800;color:var(--c)}
+.stl{display:flex;flex-direction:column;gap:3px;margin-top:6px;max-height:220px;overflow:auto}
+.stl div{display:flex;gap:10px;font-size:14px;cursor:pointer;padding:3px 6px;border-radius:6px} .stl div:hover{background:#f4fbfc}
+.stl span{color:var(--muted);min-width:120px}
+.stcur{margin-top:8px;font-size:14px}
+.stcur .chip{font-size:13px;padding:3px 10px;margin:2px}
+.acc{display:flex;gap:6px;align-items:center;flex-wrap:wrap}
+.accu{background:#eef3f6;border-radius:6px;padding:1px 6px}
+.accp{color:#1e8e5a}
+.throw{flex-wrap:wrap}

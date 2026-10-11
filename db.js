@@ -29,7 +29,11 @@ const M = {
   dirty: {}, listeners: [], online: navigator.onLine, unsub: [],
   on(fn) { this.listeners.push(fn); },
   emit(kind, info) { this.listeners.forEach(f => { try { f(kind, info || {}); } catch (e) { console.error(e); } }); },
-  sections() { return this.role === 'admin' ? ['women', 'men'] : this.role ? [this.role] : []; },
+  me: null,
+  sections() { if (this.role === 'therapist') return this.me && this.me.section ? [this.me.section] : []; return this.role === 'admin' ? ['women', 'men'] : this.role ? [this.role] : []; },
+  isTherapist() { return this.role === 'therapist'; },
+  isManager() { return this.role === 'admin' || this.role === 'women' || this.role === 'men'; },
+  label() { return this.role === 'therapist' ? (this.me && this.me.name || 'معالج') : (ROLES[this.role] || ''); },
   hasConfig() { return !!cfg(); }
 };
 
@@ -197,16 +201,17 @@ M._setOnline = function (v) { if (this.online !== v) { this.online = v; this.emi
 M._initServer = async function () {
   this.online = false;
   const t = this._token(), role = ls.get('ml_srv_role', null);
-  if (!t || !ROLES[role]) return;
-  this.role = role;
-  try { const r = await this._req('GET', '/api/me'); if (r.status === 401) { this._clearSrv(); return; } } catch (e) { /* الخادم غير متاح الآن: نعمل من النسخة المحفوظة */ }
+  if (!t || !(ROLES[role] || role === 'therapist')) return;
+  this.role = role; this.me = ls.get('ml_srv_me', null);
+  try { const r = await this._req('GET', '/api/me'); if (r.status === 401) { this._clearSrv(); return; } if (r.ok && r.role) { this.role = r.role; this.me = { user: r.user, role: r.role, section: r.section, tid: r.tid, name: r.name }; ls.set('ml_srv_role', r.role); ls.set('ml_srv_me', this.me); } } catch (e) { /* الخادم غير متاح الآن: نعمل من النسخة المحفوظة */ }
   await this._startServer();
 };
-M._clearSrv = function () { this.role = null; ls.set('ml_srv_token', null); ls.set('ml_srv_role', null); };
+M._clearSrv = function () { this.role = null; this.me = null; ls.set('ml_srv_token', null); ls.set('ml_srv_role', null); ls.set('ml_srv_me', null); };
 M._srvLogin = async function (u, pw) {
   let r; try { r = await this._req('POST', '/api/login', { user: u, pass: pw }); } catch (e) { const er = new Error('net'); er.code = 'auth/network-request-failed'; throw er; }
   if (!r.ok) throw new Error('bad');
   ls.set('ml_srv_token', r.token); ls.set('ml_srv_role', r.role); this.role = r.role;
+  this.me = { user: r.user, role: r.role, section: r.section, tid: r.tid, name: r.name }; ls.set('ml_srv_me', this.me);
   await this._startServer();
 };
 M._srvLogout = async function () { try { await this._req('POST', '/api/logout'); } catch (e) {} this._clearSrv(); this.patients.clear(); this.appts.clear(); };
@@ -219,7 +224,7 @@ M._applyAll = function (data) {
     if (d.meta && d.meta.config && d.meta.config.therapists) this.meta[sec] = d.meta.config;
   });
 };
-M._cacheKey = () => 'ml_srv_cache_' + M.role;
+M._cacheKey = () => 'ml_srv_cache_' + (M.me && M.me.user || M.role);
 M._saveCache = function () {
   clearTimeout(this._cT);
   this._cT = setTimeout(() => { const out = {}; this.sections().forEach(s => out[s] = { patients: {}, appts: {}, meta: { config: this.meta[s] } });
@@ -296,6 +301,7 @@ M._flush = async function () {
       const it = ob[0];
       const r = it.op === 'del' ? await this._req('DELETE', `/api/doc/${it.sec}/${it.coll}/${it.id}`) : await this._req('PUT', `/api/doc/${it.sec}/${it.coll}/${it.id}`, { doc: it.doc, keys: it.keys });
       if (r.status === 401) { this._clearSrv(); this.emit('auth'); break; }
+      if (r.status === 403) this.emit('denied', { item: it });
       ob = this._outbox(); ob.shift(); ls.set('ml_srv_outbox', ob);
       this._setOnline(true);
     }
@@ -311,6 +317,9 @@ M._put = function (sec, coll, id, obj, keys) {
   return this._flush();
 };
 M._del = function (sec, coll, id) { this._queue({ op: 'del', sec, coll, id }); this._saveCache(); return this._flush(); };
+M.staff = async function () { try { return (await (await fetch('/api/staff')).json()).staff || []; } catch (e) { return []; } };
+M.users = async function () { const r = await this._req('GET', '/api/users'); return r.ok ? r.users : []; };
+M.userAction = async function (body) { return this._req('POST', '/api/users', body); };
 M.pending = () => M.mode === 'server' ? M._outbox().length : 0;
 
 window.addEventListener('online', () => { if (M.mode !== 'server') { M.online = true; M.emit('net'); } });

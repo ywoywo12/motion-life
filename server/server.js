@@ -44,6 +44,26 @@ const hashPw = (pw, salt) => crypto.scryptSync(String(pw), salt, 32).toString('h
 let users = readJSON(USERSF, null);
 if (!users) { users = {}; ROLES.forEach(r => { const salt = crypto.randomBytes(8).toString('hex'); users[r] = { salt, hash: hashPw(DEFAULT_PW[r], salt) }; }); writeJSON(USERSF, users); }
 let sessions = readJSON(SESSF, {});
+const roleOf = u => (users[u] && users[u].role) || u;
+const newPw = () => String(100000 + crypto.randomInt(900000));
+/* حسابات المعالجين والمعالجات (تُنشأ مرة واحدة بكلمات مرور عشوائية تُحفظ في data/therapist-accounts.txt) */
+const DEFAULT_STAFF = {
+  women: [['nour', 'نور الهدى'], ['jumana', 'جمان'], ['ola', 'علا'], ['tuqa', 'تقى'], ['safa', 'صفا'], ['rahaf', 'رهف'], ['israa', 'إسراء'], ['haya', 'هيا'], ['fatima', 'فاطمة']],
+  men: [['abualaa', 'ابو علاء'], ['abumoaz', 'ابو معاذ'], ['khaled', 'خالد'], ['ali', 'علي'], ['abdulrahman', 'عبدالرحمن'], ['abdo', 'عبدو صوان'], ['zakaria', 'زكريا']] };
+const tidFor = (sec, name, i) => { const m = db[sec] && db[sec].meta && db[sec].meta.config; const t = m && m.therapists && m.therapists.find(x => x.name === name); return t ? t.id : sec[0] + (i + 1); };
+function accountsFile() {
+  const rows = Object.entries(users).filter(([, v]) => v.role === 'therapist' && v.initialPw);
+  const txt = 'Motion Life — حسابات المعالجين والمعالجات\r\n(كلمة المرور الأولى؛ يستطيع كل شخص تغييرها من الإعدادات)\r\n\r\n' +
+    ['women', 'men'].map(sec => (sec === 'women' ? 'قسم النساء' : 'قسم الرجال') + '\r\n' + rows.filter(([, v]) => v.section === sec).map(([u, v]) => '  ' + v.name + '   اسم المستخدم: ' + u + '   كلمة المرور: ' + v.initialPw).join('\r\n')).join('\r\n\r\n');
+  try { fs.writeFileSync(path.join(DATA, 'therapist-accounts.txt'), '\ufeff' + txt); } catch (e) {}
+}
+if (!Object.values(users).some(v => v.role === 'therapist')) {
+  Object.entries(DEFAULT_STAFF).forEach(([sec, list]) => list.forEach(([u, name], i) => {
+    if (users[u]) return; const pw = newPw(), salt = crypto.randomBytes(8).toString('hex');
+    users[u] = { salt, hash: hashPw(pw, salt), role: 'therapist', section: sec, tid: tidFor(sec, name, i), name, initialPw: pw };
+  }));
+  writeJSON(USERSF, users); accountsFile();
+}
 
 /* ---------- realtime (Server-Sent Events) ---------- */
 const clients = new Set();
@@ -51,17 +71,31 @@ const clients = new Set();
 let seq = 0; const changes = []; const waiters = new Set();
 function broadcast(sec, msg) {
   msg.seq = ++seq; changes.push(msg); if (changes.length > 5000) changes.splice(0, changes.length - 5000);
-  const line = 'data: ' + JSON.stringify(msg) + '\n\n';
-  clients.forEach(c => { if (c.role === 'admin' || c.role === sec) { try { c.res.write(line); } catch (e) {} } });
   waiters.forEach(w => w.check());
 }
-setInterval(() => clients.forEach(c => { try { c.res.write(': ping\n\n'); } catch (e) {} }), 20000);
 
 /* ---------- helpers ---------- */
 const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.svg': 'image/svg+xml', '.json': 'application/json', '.png': 'image/png', '.ico': 'image/x-icon', '.webmanifest': 'application/manifest+json' };
 const send = (res, code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
-const auth = req => { const h = req.headers.authorization || ''; const t = h.startsWith('Bearer ') ? h.slice(7) : new URL(req.url, 'http://x').searchParams.get('token'); return t && sessions[t] ? { token: t, role: sessions[t].role } : null; };
-const allowed = (role, sec) => role === 'admin' || role === sec;
+const auth = req => { const h = req.headers.authorization || ''; const t = h.startsWith('Bearer ') ? h.slice(7) : new URL(req.url, 'http://x').searchParams.get('token');
+  if (!t || !sessions[t]) return null; const u = sessions[t].user || sessions[t].role; const v = users[u]; if (!v) return null;
+  return { token: t, user: u, role: roleOf(u), section: v.section || (SECS.includes(u) ? u : null), tid: v.tid || null, name: v.name || '' }; };
+const allowed = (a, sec) => a.role === 'admin' || a.section === sec;
+const isManager = a => a.role === 'admin' || a.role === 'women' || a.role === 'men';
+const meOf = a => ({ user: a.user, role: a.role, section: a.section, tid: a.tid, name: a.name });
+/* ما يراه المعالج: بدون أرقام هواتف المرضى */
+const PROTECTED_PAY = ['payMode', 'sessionPrice', 'agreedSessions', 'agreedTotal', 'payments'];
+function viewDoc(a, coll, doc) {
+  if (a.role !== 'therapist' || !doc || coll === 'meta') return doc;
+  const d = Object.assign({}, doc); delete d.phone; return d;
+}
+function viewSection(a, sec) {
+  const src = db[sec]; if (a.role !== 'therapist') return src;
+  const out = { meta: src.meta, patients: {}, appts: {} };
+  Object.entries(src.patients).forEach(([id, d]) => { out.patients[id] = viewDoc(a, 'patients', d); });
+  Object.entries(src.appts).forEach(([id, d]) => { out.appts[id] = viewDoc(a, 'appts', d); });
+  return out;
+}
 const body = req => new Promise((ok, bad) => { let b = ''; req.on('data', d => { b += d; if (b.length > 8e6) { bad(new Error('too big')); req.destroy(); } }); req.on('end', () => { try { ok(b ? JSON.parse(b) : {}); } catch (e) { bad(e); } }); });
 function lanAddresses() {
   const out = [];
@@ -140,14 +174,16 @@ async function api(req, res, url) {
   const p = url.pathname;
   if (p === '/api/ping') return send(res, 200, { ok: true, time: Date.now() });
   if (p === '/api/info') return send(res, 200, { addresses: lanAddresses(), port: PORT, httpsPort: HTTPS_PORT, stt: !!sttFiles(), sttRunning: !!sttProc && sttReady, sttTier });
+  if (p === '/api/staff') return send(res, 200, { staff: Object.entries(users).filter(([, v]) => v.role === 'therapist').map(([u, v]) => ({ user: u, name: v.name, section: v.section })) });
   if (p === '/api/login' && req.method === 'POST') {
     const { user, pass } = await body(req); const u = String(user || '').trim().toLowerCase();
     if (!users[u] || hashPw(pass, users[u].salt) !== users[u].hash) return send(res, 401, { error: 'bad' });
-    const token = crypto.randomBytes(24).toString('hex'); sessions[token] = { role: u, at: Date.now() }; writeJSON(SESSF, sessions);
-    return send(res, 200, { token, role: u });
+    const token = crypto.randomBytes(24).toString('hex'); sessions[token] = { user: u, role: roleOf(u), at: Date.now() }; writeJSON(SESSF, sessions);
+    const a = auth({ headers: { authorization: 'Bearer ' + token }, url: '/' });
+    return send(res, 200, Object.assign({ token }, meOf(a)));
   }
   const a = auth(req); if (!a) return send(res, 401, { error: 'auth' });
-  if (p === '/api/me') return send(res, 200, { role: a.role });
+  if (p === '/api/me') return send(res, 200, meOf(a));
   if (p === '/api/stt' && req.method === 'POST') {
     if (!sttFiles()) return send(res, 503, { error: 'stt_off' });
     if (!sttProc) return send(res, 503, { error: 'stt_down' });
@@ -156,20 +192,39 @@ async function api(req, res, url) {
   }
   if (p === '/api/logout' && req.method === 'POST') { delete sessions[a.token]; writeJSON(SESSF, sessions); return send(res, 200, { ok: true }); }
   if (p === '/api/password' && req.method === 'POST') {
-    const { old, pass } = await body(req); const u = users[a.role];
+    const { old, pass } = await body(req); const u = users[a.user];
     if (hashPw(old, u.salt) !== u.hash) return send(res, 403, { error: 'wrong' });
-    if (String(pass || '').length < 6) return send(res, 400, { error: 'short' });
-    u.salt = crypto.randomBytes(8).toString('hex'); u.hash = hashPw(pass, u.salt); writeJSON(USERSF, users);
-    Object.keys(sessions).forEach(t => { if (sessions[t].role === a.role && t !== a.token) delete sessions[t]; }); writeJSON(SESSF, sessions);
+    if (String(pass || '').length < 4) return send(res, 400, { error: 'short' });
+    u.salt = crypto.randomBytes(8).toString('hex'); u.hash = hashPw(pass, u.salt); delete u.initialPw; writeJSON(USERSF, users); accountsFile();
+    Object.keys(sessions).forEach(t => { if ((sessions[t].user || sessions[t].role) === a.user && t !== a.token) delete sessions[t]; }); writeJSON(SESSF, sessions);
     return send(res, 200, { ok: true });
   }
+  /* إدارة حسابات المعالجين (الإدارة + حساب القسم لقسمه) */
+  if (p === '/api/users') {
+    if (!isManager(a)) return send(res, 403, { error: 'forbidden' });
+    if (req.method === 'GET') return send(res, 200, { users: Object.entries(users).filter(([, v]) => v.role === 'therapist' && allowed(a, v.section)).map(([u, v]) => ({ user: u, name: v.name, section: v.section, tid: v.tid, initialPw: v.initialPw || '' })) });
+    const { action, user, name, section, tid } = await body(req); const u = String(user || '').trim().toLowerCase();
+    if (action === 'create') {
+      if (!/^[a-z0-9_.-]{2,24}$/.test(u)) return send(res, 400, { error: 'username' });
+      if (users[u]) return send(res, 409, { error: 'exists' });
+      if (!SECS.includes(section) || !allowed(a, section)) return send(res, 403, { error: 'forbidden' });
+      const pw = newPw(), salt = crypto.randomBytes(8).toString('hex');
+      users[u] = { salt, hash: hashPw(pw, salt), role: 'therapist', section, tid: String(tid || ''), name: String(name || u), initialPw: pw };
+      writeJSON(USERSF, users); accountsFile(); return send(res, 200, { user: u, password: pw });
+    }
+    const v = users[u]; if (!v || v.role !== 'therapist' || !allowed(a, v.section)) return send(res, 404, { error: 'nouser' });
+    if (action === 'reset') { const pw = newPw(); v.salt = crypto.randomBytes(8).toString('hex'); v.hash = hashPw(pw, v.salt); v.initialPw = pw; writeJSON(USERSF, users); accountsFile();
+      Object.keys(sessions).forEach(t => { if (sessions[t].user === u) delete sessions[t]; }); writeJSON(SESSF, sessions); return send(res, 200, { user: u, password: pw }); }
+    if (action === 'delete') { delete users[u]; writeJSON(USERSF, users); accountsFile(); Object.keys(sessions).forEach(t => { if (sessions[t].user === u) delete sessions[t]; }); writeJSON(SESSF, sessions); return send(res, 200, { ok: true }); }
+    return send(res, 400, { error: 'action' });
+  }
   if (p === '/api/data') {
-    const out = {}; SECS.forEach(s => { if (allowed(a.role, s)) out[s] = db[s]; });
-    return send(res, 200, { data: out, time: Date.now(), seq });
+    const out = {}; SECS.forEach(s => { if (allowed(a, s)) out[s] = viewSection(a, s); });
+    return send(res, 200, { data: out, time: Date.now(), seq, me: meOf(a) });
   }
   if (p === '/api/changes') {
     const since = +url.searchParams.get('since') || 0;
-    const pick = () => changes.filter(c => c.seq > since && allowed(a.role, c.sec));
+    const pick = () => changes.filter(c => c.seq > since && allowed(a, c.sec)).map(c => c.doc ? Object.assign({}, c, { doc: viewDoc(a, c.coll, c.doc) }) : c);
     if (changes.length && since < changes[0].seq - 1 && since < seq) return send(res, 200, { reset: true, seq });
     if (since > seq) return send(res, 200, { reset: true, seq });
     const now = pick(); if (now.length) return send(res, 200, { changes: now, seq });
@@ -177,12 +232,6 @@ async function api(req, res, url) {
     const w = { check() { const c = pick(); if (c.length && !done) { done = true; waiters.delete(w); clearTimeout(t); send(res, 200, { changes: c, seq }); } } };
     const t = setTimeout(() => { if (!done) { done = true; waiters.delete(w); send(res, 200, { changes: [], seq }); } }, 25000);
     waiters.add(w); req.on('close', () => { if (!done) { done = true; waiters.delete(w); clearTimeout(t); } });
-    return;
-  }
-  if (p === '/api/events') {
-    res.writeHead(200, { 'Content-Type': 'text/event-stream; charset=utf-8', 'Cache-Control': 'no-store', Connection: 'keep-alive', 'X-Accel-Buffering': 'no' });
-    res.write('retry: 2000\n\n');
-    const c = { res, role: a.role }; clients.add(c); req.on('close', () => clients.delete(c));
     return;
   }
   if (p === '/api/backup' && a.role === 'admin') {
@@ -193,18 +242,38 @@ async function api(req, res, url) {
   if (m) {
     const [, sec, coll, id] = m;
     if (!SECS.includes(sec) || !COLLS.includes(coll)) return send(res, 400, { error: 'path' });
-    if (!allowed(a.role, sec)) return send(res, 403, { error: 'forbidden' });
-    const store = db[sec][coll];
-    if (req.method === 'DELETE') { delete store[id]; persist(); broadcast(sec, { op: 'del', sec, coll, id, origin: req.headers['x-client'] || '' }); return send(res, 200, { ok: true }); }
+    if (!allowed(a, sec)) return send(res, 403, { error: 'forbidden' });
+    const store = db[sec][coll], ex = store[id], th = a.role === 'therapist';
+    if (th && coll === 'meta') return send(res, 403, { error: 'forbidden' });
+    if (req.method === 'DELETE') {
+      if (th && (coll !== 'appts' || !ex || ex.tid !== a.tid || (ex.createdBy && ex.createdBy !== a.user))) return send(res, 403, { error: 'not_yours' });
+      delete store[id]; persist(); broadcast(sec, { op: 'del', sec, coll, id, origin: req.headers['x-client'] || '' }); return send(res, 200, { ok: true });
+    }
     if (req.method === 'PUT') {
       const { doc, keys } = await body(req);
       if (!doc || typeof doc !== 'object') return send(res, 400, { error: 'doc' });
       delete doc.id;
-      if (Array.isArray(keys) && keys.length && store[id]) { keys.concat(['updated']).forEach(k => { if (k in doc) store[id][k] = doc[k]; }); }
+      if (coll === 'appts') {
+        if (th && ((ex && ex.tid !== a.tid) || doc.tid !== a.tid)) return send(res, 403, { error: 'not_yours' });
+        doc.createdBy = ex ? (ex.createdBy || '') : a.user;
+        if (th) { doc.phone = ex ? (ex.phone || '') : ((db[sec].patients[doc.patientId] || {}).phone || ''); if (ex && 'amount' in ex) doc.amount = ex.amount; else delete doc.amount; }
+        store[id] = doc;
+      } else if (coll === 'patients' && th) {
+        // المعالج لا يعدّل الدفعات ولا رقم الهاتف
+        const keepPay = (d, old) => { PROTECTED_PAY.forEach(k => { if (old && k in old) d[k] = old[k]; else delete d[k]; });
+          if (old) d.phone = old.phone; if (Array.isArray(d.sessions)) d.sessions = d.sessions.map((r, i) => Object.assign({}, r, { amount: old && old.sessions && old.sessions[i] ? old.sessions[i].amount || '' : '' })); };
+        if (Array.isArray(keys) && keys.length && ex) {
+          keys.concat(['updated']).forEach(k => {
+            if (!(k in doc) || PROTECTED_PAY.includes(k) || k === 'phone') return;
+            if (k === 'sessions' && Array.isArray(doc.sessions)) { const old = ex.sessions || []; ex.sessions = doc.sessions.map((r, i) => Object.assign({}, r, { amount: old[i] ? old[i].amount || '' : '' })); }
+            else ex[k] = doc[k];
+          });
+        } else { const old = ex ? JSON.parse(JSON.stringify(ex)) : null; keepPay(doc, old); if (!old && doc.phone === undefined) doc.phone = ''; store[id] = doc; }
+      } else if (Array.isArray(keys) && keys.length && ex) { keys.concat(['updated']).forEach(k => { if (k in doc) ex[k] = doc[k]; }); }
       else store[id] = doc;
       store[id].section = sec; persist();
       broadcast(sec, { op: 'put', sec, coll, id, doc: store[id], origin: req.headers['x-client'] || '' });
-      return send(res, 200, { ok: true });
+      return send(res, 200, { ok: true, doc: viewDoc(a, coll, store[id]) });
     }
   }
   send(res, 404, { error: 'not found' });
