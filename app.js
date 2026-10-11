@@ -452,6 +452,7 @@ function bindPatient(p, tab) {
 const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
 const micBtn = k => `<button type="button" class="mic" data-mic="${k}" title="سجّل بصوتك وسيُكتب تلقائياً">🎤 <span>تسجيل صوتي</span></button>`;
 let rec = null, recBtn = null, sttAvail = null;
+const USE_LOCAL_STT = false;
 function stopMic() { if (rec) { try { rec.stop(); } catch (e) {} } }
 function micHelp(title, body) { openModal(`<div class="modal-h"><h3>${title}</h3><span class="spacer"></span><button class="x" id="mc">×</button></div>${body}`); $('#mc').onclick = closeModal; }
 function needSecure() {
@@ -556,7 +557,8 @@ function bindMics() {
     if (b.classList.contains('busy')) return;
     stopMic();
     const ta = document.querySelector(`[data-k="${b.dataset.mic}"]`);
-    if (DB.mode === 'server') {
+    // التسجيل عبر خدمة Google في المتصفح (حسب طلب المركز). محرك اللابتوب المحلي يبقى جاهزاً للتفعيل لاحقاً: USE_LOCAL_STT = true
+    if (USE_LOCAL_STT && DB.mode === 'server') {
       if (sttAvail === null) { try { sttAvail = !!(await (await fetch('/api/info')).json()).stt; } catch (e) { sttAvail = null; return toast('لا يوجد اتصال بخادم المركز'); } }
       if (sttAvail) return serverMic(b, ta);
     }
