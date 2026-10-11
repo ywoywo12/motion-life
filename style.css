@@ -312,6 +312,19 @@ table.sess input[type=date]{min-width:120px}
 .pid-name b{font-size:20px;color:var(--navy)}
 .paymode{display:flex;align-items:center;gap:12px;flex-wrap:wrap;border:1.5px solid var(--teal);background:#f4fafb;border-radius:10px;padding:10px 12px;margin-bottom:10px}
 
+/* intake questionnaire */
+.alert{border-radius:10px;padding:9px 14px;margin-bottom:8px;font-size:15px}
+.alert.red{background:#fdecea;border:1.5px solid #f3b8b1;color:#8f1d12}
+.alert.amber{background:#fff6ec;border:1.5px solid #f0c79e;color:#7a3d06}
+.qrow{display:flex;align-items:center;gap:6px 10px;flex-wrap:wrap;margin:8px 0}
+.qrow .lbl{margin-inline-end:6px}
+.iq .flags{gap:4px 16px}
+.iq .flags .chk{align-items:flex-start}
+.iq .yn{gap:2px 22px}
+.iq .internal{border-color:#9fb4c2;border-style:dashed}
+.line-in{border:0;border-bottom:1.5px solid #9fb4c2;padding:6px 4px;font-size:16px;width:100%;background:transparent}
+.iqp .box-b>div{margin:2px 0}
+
 /* ---------- PRINT (A4, like the paper file) ---------- */
 #print{display:none}
 @media print{

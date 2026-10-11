@@ -28,7 +28,7 @@ function newPatient(section, extra) {
     id: uid('p'), section,
     created: new Date().toISOString(),
     serial: String(same.length + 1), shelf: '', cabinet: '', fileNo: String((nums.length ? Math.max(...nums) : 0) + 1),
-    name: '', age: '', gender: section === 'women' ? 'أنثى' : 'ذكر', phone: '', job: '', evalDate: today(),
+    name: '', age: '', gender: section === 'women' ? 'أنثى' : 'ذكر', phone: '', job: '', evalDate: today(), iq_date: today(),
     complaint: '', chronic: '', history: '', clinical: '',
     symptoms: '', pain: null, painType: [], duration: '',
     strength: '', limits: '', notes: '', therapist: '',
@@ -39,7 +39,7 @@ function newPatient(section, extra) {
   }, extra || {});
 }
 function createPatient(extra) {
-  const make = sec => { const p = newPatient(sec, extra); DB.savePatient(p); go('p/' + p.id + '/1'); return p; };
+  const make = sec => { const p = newPatient(sec, extra); DB.savePatient(p); go('p/' + p.id + '/0'); return p; };
   if (DB.role !== 'admin') return make(DB.role);
   openModal(`<div class="modal-h"><h3>ملف جديد — اختر القسم</h3><span class="spacer"></span><button class="x" id="mc">×</button></div>
     <div class="row"><button class="btn big sec-w" id="sw">👩 قسم النساء</button><button class="btn big sec-m" id="sm">👨 قسم الرجال</button></div>`);
@@ -62,6 +62,9 @@ const go = h => { location.hash = h; };
 window.addEventListener('hashchange', () => render());
 
 function syncBadge() {
+  if (DB.mode === 'server') { const n = DB.pending();
+    return DB.online ? `<span class="sync on">● متصل بخادم المركز${n ? ' — جارٍ إرسال ' + n : ''}</span>`
+      : `<span class="sync wait" title="التعديلات محفوظة على هذا الجهاز وستُرسل تلقائياً">● غير متصل بخادم المركز${n ? ' — ' + n + ' تعديل بانتظار الإرسال' : ''}</span>`; }
   if (DB.mode !== 'cloud') return `<span class="sync off" title="البيانات محفوظة على هذا الجهاز فقط">● حفظ محلي (بدون مزامنة)</span>`;
   return DB.online ? `<span class="sync on">● متزامن لحظياً</span>` : `<span class="sync wait">● بدون إنترنت — سيُرفع تلقائياً</span>`;
 }
@@ -109,7 +112,7 @@ function loginView() {
     <label for="lp">كلمة المرور</label><input id="lp" type="password" autocomplete="current-password" dir="ltr">
     <button class="btn big" style="width:100%;margin-top:20px" id="lb">دخول</button>
     <div class="err" id="lerr"></div>
-    <div class="login-foot">${cloud ? '<span class="sync on">● المزامنة اللحظية مفعّلة</span>' : '<span class="sync off">● وضع الحفظ المحلي</span>'} · <a href="#setup">إعداد المزامنة</a></div>
+    <div class="login-foot">${DB.mode === 'server' ? '<span class="sync on">● نظام المركز الداخلي (يعمل بدون إنترنت)</span>' : (cloud ? '<span class="sync on">● المزامنة اللحظية مفعّلة</span>' : '<span class="sync off">● وضع الحفظ المحلي</span>') + ' · <a href="#setup">إعداد المزامنة</a>'}</div>
   </form></div>`;
 }
 function bindLogin() {
@@ -174,14 +177,87 @@ const PAIN_C = ['#2e9e5b','#4caf50','#7cb342','#c0ca33','#fdd835','#fbc02d','#ff
 
 function patientView(p, tab) {
   const tabs = `<div class="pid-bar"><span class="pid-name">👤 <b data-live="name">${esc(p.name || 'مريض جديد')}</b></span><span>رقم الملف: <b data-live="fileNo">${esc(p.fileNo)}</b></span>${DB.role === 'admin' ? `<span class="badge sec-${p.section}">${SEC[p.section]}</span>` : ''}</div>
+  ${alertsHTML(p)}
   <div class="ptabs">
+    <button class="tab ${tab === '0' ? 'on' : ''}" data-go="p/${p.id}/0">📝 الاستبيان الطبي السريع</button>
     <button class="tab ${tab === '1' ? 'on' : ''}" data-go="p/${p.id}/1">١- ملف المريض والتقييم</button>
     <button class="tab ${tab === '2' ? 'on' : ''}" data-go="p/${p.id}/2">٢- الخطة العلاجية والجلسات</button>
     <span class="spacer"></span><span class="saved" id="sv"></span>
     <button class="btn ghost sm" id="prt">🖨️ طباعة الملف</button>
     <button class="btn ghost sm" id="prtEx">🖨️ ورقة تمارين للمريض</button>
     <button class="btn danger sm" id="delP">حذف</button></div>`;
-  return tabs + (tab === '2' ? page2(p) : page1(p));
+  return tabs + (tab === '2' ? page2(p) : tab === '0' ? page0(p) : page1(p));
+}
+
+/* ---------- الاستبيان الطبي السريع (قبل الفحص الأولي) ---------- */
+const IQ = {
+  onset: ['تدريجياً', 'فجأة', 'بعد إصابة/حادث', 'بعد عملية'],
+  sym: ['ألم', 'تنميل/خدر', 'ضعف', 'تيبس/صعوبة حركة', 'تورم'],
+  flags: ['تغير جديد بالتبول/التبرز أو خدر بين الفخذين', 'ضعف جديد أو سريع التفاقم بأحد الأطراف', 'ألم صدر/ضيق نفس/إغماء غير معتاد',
+    'حرارة غير مفسرة أو نقص وزن غير مقصود', 'سقوط/رض مهم أو ألم شديد غير معتاد ليلاً', 'ألم أو تورم جديد غير معتاد بساق واحدة'],
+  hx: ['لا أمراض معروفة', 'ضغط/قلب', 'سكري', 'مرض عصبي/جلطة', 'سرطان'],
+};
+const arrOf = (p, k) => Array.isArray(p[k]) ? p[k] : [];
+const redFlags = p => arrOf(p, 'iq_flags').filter(x => x !== 'لا يوجد');
+function alertsHTML(p) {
+  const a = [];
+  if (redFlags(p).length) a.push(`<b>⚠️ علامات خطر في الاستبيان:</b> ${redFlags(p).map(esc).join('، ')} — يجب إخبار المعالج قبل بدء العلاج.`);
+  const c = [];
+  if (p.iq_implant === 'نعم') c.push('منظم قلب أو معدن مزروع');
+  if (p.iq_preg === 'نعم' || p.iq_preg === 'غير مؤكدة') c.push('حمل ' + (p.iq_preg === 'نعم' ? '' : '(غير مؤكد)'));
+  if (p.iq_meds === 'نعم') c.push('أدوية منتظمة/مميعات/كورتيزون');
+  if (p.iq_osteo === 'نعم') c.push('هشاشة عظام' + (p.iq_osteoGrade ? ' (' + p.iq_osteoGrade + ')' : ''));
+  if (p.iq_allergy === 'نعم') c.push('حساسية');
+  if (arrOf(p, 'iq_hx').includes('سرطان')) c.push('سرطان');
+  if (c.length) a.push(`<b>ℹ️ انتبه قبل استخدام الأجهزة:</b> ${c.map(esc).join('، ')}`);
+  return `<div id="alerts">${a.map((x, i) => `<div class="alert ${i === 0 && redFlags(p).length ? 'red' : 'amber'}">${x}</div>`).join('')}</div>`;
+}
+const cb = (k, v, p, extra = '') => `<label class="chk"><input type="checkbox" data-arr="${k}" value="${esc(v)}" ${arrOf(p, k).includes(v) ? 'checked' : ''} ${extra}>${esc(v)}</label>`;
+const rb = (k, opts, p) => opts.map(v => `<label class="chk"><input type="radio" name="${k}_${p.id}" data-k="${k}" value="${esc(v)}" ${p[k] === v ? 'checked' : ''}>${esc(v)}</label>`).join('');
+function page0(p) {
+  return `<div class="sheet iq">${head('استبيان المريض السريع — التاريخ الطبي', 'قبل الفحص الأولي • الوقت المستهدف: دقيقتان')}
+  <div class="box"><div class="box-t">١ | معلومات أساسية</div><div class="box-b grid2">
+    ${inp('name', 'الاسم الكامل', 'text', p.name)}<div class="f"><label>العمر:</label><input data-k="age" type="number" value="${esc(p.age)}"><span>سنة</span></div>
+    ${inp('phone', 'رقم الهاتف', 'tel', p.phone)}${inp('iq_date', 'التاريخ', 'date', p.iq_date || today())}
+  </div></div>
+  <div class="box"><div class="box-t">٢ | سبب الزيارة</div><div class="box-b">
+    <div class="grid2">${inp('iq_where', 'وين المشكلة الأساسية؟', 'text', p.iq_where)}${inp('iq_since', 'من إمتى؟', 'text', p.iq_since)}</div>
+    <div class="qrow"><span class="lbl">كيف بدأت؟</span>${IQ.onset.map(v => cb('iq_onset', v, p)).join('')}</div>
+    <div class="qrow"><span class="lbl">شو الأعراض؟</span>${IQ.sym.map(v => cb('iq_sym', v, p)).join('')}</div>
+    <div class="grid2"><div class="f" style="align-items:center"><label>شدة الألم حالياً:</label>
+      <div class="pain" id="pain">${Array.from({ length: 11 }, (_, i) => `<button type="button" data-v="${i}" class="${p.pain === i ? 'on' : ''}" style="${p.pain === i ? 'background:' + PAIN_C[i] : ''}">${i}</button>`).join('')}</div><span>/ ١٠</span></div>
+      ${inp('iq_activity', 'شو أهم نشاط صار صعب عليك؟', 'text', p.iq_activity)}</div>
+  </div></div>
+  <div class="box"><div class="box-t">٣ | أسئلة سلامة مهمة — ضع علامة إذا كان العرض موجوداً حديثاً أو حالياً</div><div class="box-b">
+    <div class="grid2 flags">${IQ.flags.map(v => cb('iq_flags', v, p, 'data-flag="1"')).join('')}</div>
+    <div class="qrow"><span class="lbl">إذا ما عندك أي عرض مما سبق:</span>${cb('iq_flags', 'لا يوجد', p, 'data-none="1"')}</div>
+    <div class="alert red" style="margin:6px 0 0">إذا ظهر أي عرض مقلق، أخبر الفريق مباشرة قبل بدء العلاج. الاستبيان لا يغني عن تقييم السلامة لدى المعالج.</div>
+  </div></div>
+  <div class="box"><div class="box-t">٤ | التاريخ الطبي — ضع علامة على الموجود لديك</div><div class="box-b">
+    <div class="qrow">${IQ.hx.map(v => cb('iq_hx', v, p)).join('')}<div class="f" style="flex:1;min-width:200px"><label>أمراض أخرى:</label><input data-k="iq_other" value="${esc(p.iq_other || '')}"></div></div>
+    <div class="qrow"><span class="lbl">هشاشة العظام:</span>${rb('iq_osteo', ['لا', 'نعم', 'لا أعرف'], p)}</div>
+    <div class="qrow"><span class="lbl">إذا نعم، حسب تقرير الطبيب/الكثافة:</span>${rb('iq_osteoGrade', ['خفيفة', 'متوسطة', 'شديدة', 'غير محددة'], p)}</div>
+    <div class="qrow"><small class="hint">تُسجّل الدرجة كما وردت بتقرير الطبيب، ولا تُقدّر من الأعراض.</small><div class="f" style="flex:1;min-width:220px"><label>نتيجة قياس الكثافة (T-score) إن توفرت:</label><input data-k="iq_tscore" value="${esc(p.iq_tscore || '')}" dir="ltr"></div><small class="hint">(يفسرها المعالج/الطبيب)</small></div>
+    <div class="grid2 yn">
+      <div class="qrow"><span class="lbl">حساسية من دواء أو مادة؟</span>${rb('iq_allergy', ['لا', 'نعم'], p)}</div>
+      <div class="qrow"><span class="lbl">أدوية منتظمة أو مميعات دم/كورتيزون؟</span>${rb('iq_meds', ['لا', 'نعم'], p)}</div>
+      <div class="qrow"><span class="lbl">منظم قلب أو جهاز/معدن مزروع؟</span>${rb('iq_implant', ['لا', 'نعم'], p)}</div>
+      <div class="qrow"><span class="lbl">عملية سابقة مهمة أو كسر سابق؟</span>${rb('iq_surgery', ['لا', 'نعم'], p)}</div>
+      <div class="qrow"><span class="lbl">حمل أو احتمال حمل؟ (إن ينطبق)</span>${rb('iq_preg', ['لا', 'نعم', 'غير مؤكدة'], p)}</div>
+      <div class="fcol"><span class="lbl">تفاصيل مهمة عند اختيار «نعم»:</span><input class="line-in" data-k="iq_details" value="${esc(p.iq_details || '')}"></div>
+    </div>
+  </div></div>
+  <div class="box"><div class="box-t">٥ | تأكيد المعلومات</div><div class="box-b">
+    <p style="margin:0 0 8px">أؤكد أن إجاباتي صحيحة بحسب معرفتي، وسأخبر الفريق عن أي تغير صحي مهم. أفهم أن هذا الاستبيان لا يحل محل الفحص أو الموافقة العلاجية المستنيرة.</p>
+    <div class="grid2">${inp('iq_sign', 'توقيع المريض/الولي', 'text', p.iq_sign)}<div class="f"><label>رقم الملف (للاستقبال):</label><input value="${esc(p.fileNo)}" readonly tabindex="-1"></div></div>
+  </div></div>
+  <div class="box internal"><div class="box-t">للاستخدام الداخلي فقط — لا يعبئه المريض</div><div class="box-b">
+    <div class="grid2 yn"><div class="qrow"><span class="lbl">هل يلزم استقصاء/إحالة قبل العلاج؟</span>${rb('iq_referral', ['نعم', 'لا'], p)}</div>
+      <div class="qrow"><span class="lbl">تمت مراجعة الاستبيان مع المريض؟</span>${rb('iq_reviewed', ['نعم', 'لا'], p)}</div>
+      ${inp('iq_therapist', 'اسم/توقيع المعالج', 'text', p.iq_therapist)}${inp('iq_notes', 'ملاحظات مختصرة', 'text', p.iq_notes)}</div>
+  </div></div>
+  </div>
+  <div class="row"><span class="spacer"></span><button class="btn big" data-go="p/${p.id}/1">التالي: ملف المريض والتقييم ←</button></div>`;
 }
 
 function page1(p) {
@@ -251,7 +327,8 @@ function page2(p) {
   <div class="paymode"><span class="lbl">طريقة الدفع:</span>
     <label class="chk"><input type="radio" name="pm" data-k="payMode" value="" ${ps ? '' : 'checked'}>دفعات</label>
     <label class="chk"><input type="radio" name="pm" data-k="payMode" value="session" ${ps ? 'checked' : ''}>مبلغ مقابل كل جلسة</label>
-    ${ps ? `<div class="f" style="flex:1;min-width:200px"><label>سعر الجلسة:</label><input data-k="sessionPrice" value="${esc(p.sessionPrice || '')}" inputmode="numeric"></div>` : ''}</div>
+    ${ps ? `<div class="f" style="flex:1;min-width:200px"><label>سعر الجلسة:</label><input data-k="sessionPrice" value="${esc(p.sessionPrice || '')}" inputmode="numeric"></div>
+      <button class="btn" id="addSessPay" type="button">➕ إضافة جلسة مع دفعة</button>` : ''}</div>
   <div class="pay">
     <div class="paybox">${inp('agreedSessions', 'عدد الجلسات المتفق عليها', 'text', p.agreedSessions)}</div>
     <div class="paybox">${inp('agreedTotal', 'المبلغ الإجمالي المتفق عليه', 'text', p.agreedTotal)}</div>
@@ -296,6 +373,13 @@ function bindPatient(p, tab) {
     if (['agreedTotal', 'agreedSessions', 'sessionPrice'].includes(el.dataset.k)) calc();
     if (el.dataset.k === 'name' || el.dataset.k === 'fileNo') $$(`[data-live="${el.dataset.k}"]`).forEach(x => x.textContent = el.value || (el.dataset.k === 'name' ? 'مريض جديد' : ''));
     if (el.dataset.k === 'payMode') { clearTimeout(t); const ks = [...dirty]; dirty.clear(); DB.savePatient(p, ks); render(); } }));
+  $$('[data-arr]').forEach(el => el.addEventListener('change', () => { const k = el.dataset.arr; let a = arrOf(p, k).filter(x => x !== el.value);
+    if (el.checked) a.push(el.value);
+    if (k === 'iq_flags') { if (el.dataset.none && el.checked) a = ['لا يوجد']; else if (el.checked) a = a.filter(x => x !== 'لا يوجد');
+      $$('[data-arr="iq_flags"]').forEach(x => { x.checked = a.includes(x.value); }); }
+    p[k] = a; touch(k); refreshAlerts(); }));
+  const refreshAlerts = () => { const box = $('#alerts'); if (box) box.outerHTML = alertsHTML(p); };
+  $$('[data-k^="iq_"]').forEach(el => el.addEventListener('change', refreshAlerts));
   $$('[data-pt]').forEach(el => el.addEventListener('change', () => { const v = el.dataset.pt; p.painType = p.painType.filter(x => x !== v); if (el.checked) p.painType.push(v); touch('painType'); }));
   const pain = $('#pain');
   const drawPain = () => $$('button', pain).forEach(x => { const on = +x.dataset.v === p.pain; x.classList.toggle('on', on); x.style.background = on ? PAIN_C[p.pain] : ''; });
@@ -304,6 +388,24 @@ function bindPatient(p, tab) {
   const calc = () => { const paid = paidOf(p); if ($('#paid')) { $('#paid').value = paid ? fmt(paid) : ''; $('#remain').value = remainOf(p); } };
   $$('[data-pay]').forEach(el => el.addEventListener('input', () => { p.payments[+el.dataset.pay][el.dataset.f] = el.value; touch('payments'); calc(); }));
   bindMics();
+  if ($('#addSessPay')) $('#addSessPay').onclick = () => {
+    const i = p.sessions.findIndex(x => !x.date && !x.amount); if (i < 0) return toast('كل الجلسات الـ22 معبأة');
+    const ths = therapists(p.section);
+    openModal(`<div class="modal-h"><h3>إضافة جلسة مع دفعة — الجلسة ${i + 1}</h3><span class="spacer"></span><button class="x" id="mc">×</button></div>
+      <div class="pform">
+        <div class="fcol"><span class="lbl">التاريخ</span><input type="date" id="sd" value="${today()}"></div>
+        <div class="fcol"><span class="lbl">المبلغ المدفوع</span><input id="sa" value="${esc(p.sessionPrice || '')}" inputmode="numeric"></div>
+        <div class="fcol" style="grid-column:1/-1"><span class="lbl">${p.section === 'women' ? 'المعالجة' : 'المعالج'}</span><div class="thpick">${ths.map(t => `<button type="button" class="thb" data-tid="${t.id}" style="--c:${t.color}"><span class="dot" style="background:${t.color}"></span>${esc(t.name)}</button>`).join('')}</div></div>
+        <div class="fcol" style="grid-column:1/-1"><span class="lbl">ملاحظات / الاستجابة</span><input id="sn"></div>
+      </div>
+      <div class="modal-f"><button class="btn big" id="ok">✓ إضافة الجلسة والدفعة</button><button class="btn ghost" id="cn">إلغاء</button></div>`);
+    let by = '';
+    $$('[data-tid]').forEach(b => b.onclick = () => { by = b.textContent.trim(); $$('[data-tid]').forEach(x => x.classList.toggle('on', x === b)); });
+    $('#mc').onclick = $('#cn').onclick = closeModal;
+    $('#ok').onclick = () => { const amt = $('#sa').value.trim(); if (!amt) return toast('اكتب المبلغ');
+      Object.assign(p.sessions[i], { date: $('#sd').value, amount: amt, by: by || p.sessions[i].by, note: $('#sn').value.trim() || p.sessions[i].note });
+      clearTimeout(t); dirty.add('sessions'); const ks = [...dirty]; dirty.clear(); DB.savePatient(p, ks); closeModal(); render(); toast('تمت إضافة الجلسة ' + (i + 1) + ' مع الدفعة'); };
+  };
   $('#prt').addEventListener('click', () => printPatient(p, false));
   $('#prtEx').addEventListener('click', () => p.exercises.length ? printPatient(p, true) : toast('أضف تمارين في الخطة العلاجية أولاً'));
   $('#delP').addEventListener('click', () => {
@@ -316,6 +418,7 @@ function bindPatient(p, tab) {
     $$('[data-k]').forEach(el => { if (el === document.activeElement) return; const v = p[el.dataset.k];
       if (el.type === 'radio') el.checked = el.value === v; else if (el.value !== (v == null ? '' : String(v))) el.value = v == null ? '' : v; });
     if (pain) drawPain();
+    $$('[data-arr]').forEach(el => { el.checked = arrOf(p, el.dataset.arr).includes(el.value); }); refreshAlerts();
     $$('[data-pt]').forEach(el => { el.checked = p.painType.includes(el.dataset.pt); });
     $$('[data-s]').forEach(el => { if (el !== document.activeElement) el.value = p.sessions[+el.dataset.s][el.dataset.f] || ''; });
     $$('[data-pay]').forEach(el => { if (el !== document.activeElement) el.value = p.payments[+el.dataset.pay][el.dataset.f] || ''; });
@@ -635,7 +738,10 @@ function settingsView() {
     <div class="thlist" id="thl-${sec}"></div>
     <div class="row" style="margin-top:10px"><input class="search" style="flex:1;min-width:180px;padding:10px 14px" id="thn-${sec}" placeholder="${sec === 'women' ? 'اسم معالجة جديدة' : 'اسم معالج جديد'}"><button class="btn" data-addth="${sec}">➕ إضافة</button></div></div>`).join('')}
   <div class="sheet"><h3 style="margin-top:0">🔄 المزامنة</h3>
-    ${DB.mode === 'cloud' ? `<p style="margin:0" class="sync on">● المزامنة اللحظية مفعّلة — أي تعديل يظهر فوراً على كل الأجهزة المسجّلة بنفس القسم.</p>`
+    ${DB.mode === 'server' ? `<p style="margin-top:0" class="sync on">● النظام يعمل من خادم المركز الداخلي (لابتوب المركز) عبر الواي فاي — لا يحتاج إنترنت.</p>
+      <div id="srvInfo" class="help" style="margin:0">جارٍ قراءة عناوين الخادم...</div>
+      ${DB.role === 'admin' ? '<a class="btn light" style="margin-top:10px" id="srvBk" href="#">⬇️ تنزيل نسخة كاملة من بيانات الخادم</a>' : ''}` :
+    DB.mode === 'cloud' ? `<p style="margin:0" class="sync on">● المزامنة اللحظية مفعّلة — أي تعديل يظهر فوراً على كل الأجهزة المسجّلة بنفس القسم.</p>`
       : `<p style="margin-top:0" class="sync off">● الحفظ الآن على هذا الجهاز فقط.</p><a class="btn light" href="#setup">إعداد المزامنة بين الأجهزة</a>`}</div>
   <div class="sheet"><h3 style="margin-top:0">💾 نسخة احتياطية</h3>
     <p style="color:var(--muted);margin-top:0">تنزيل نسخة من ملفات ومواعيد ${esc(DB.ROLES[DB.role])} لحفظها عندك.</p>
@@ -658,6 +764,10 @@ function bindTherapists() {
 }
 function bindSettings() {
   bindTherapists(); liveRedraw = bindTherapists;
+  if ($('#srvInfo')) fetch('/api/info').then(r => r.json()).then(i => { $('#srvInfo').innerHTML = '📶 لفتح النظام على أي جهاز متصل بواي فاي المركز اكتب في المتصفح:<br>' +
+    i.addresses.map(ip => `<b dir="ltr" style="font-size:18px">http://${ip}:${i.port}</b>`).join('<br>') + '<br><small>للتسجيل الصوتي على الأجهزة الأخرى استخدم: ' + i.addresses.map(ip => `<span dir="ltr">https://${ip}:${i.httpsPort}</span>`).join(' ، ') + '</small>'; }).catch(() => { $('#srvInfo').textContent = 'الخادم غير متاح الآن.'; });
+  if ($('#srvBk')) $('#srvBk').onclick = async e => { e.preventDefault(); const r = await fetch('/api/backup', { headers: { Authorization: 'Bearer ' + store.get('ml_srv_token', '') } }); const b = await r.blob();
+    const a = document.createElement('a'); a.href = URL.createObjectURL(b); a.download = 'motion-life-server-backup-' + today() + '.json'; document.body.appendChild(a); a.click(); a.remove(); };
   $$('[data-addth]').forEach(b => b.onclick = () => { const sec = b.dataset.addth, inp = $('#thn-' + sec), name = inp.value.trim(); if (!name) return toast('اكتب الاسم أولاً');
     const list = therapists(sec); if (list.some(t => t.name === name)) return toast('الاسم موجود مسبقاً');
     const used = list.map(t => t.color); const color = DB.PALETTE.find(c => !used.includes(c)) || DB.PALETTE[list.length % DB.PALETTE.length];
@@ -737,6 +847,24 @@ function printPatient(p, exOnly) {
   const phone = 'دمشق - الميدان | 011 8838215 - 0945823770';
   let h = '';
   if (!exOnly) {
+    const ck = (k, v) => (arrOf(p, k).includes(v) ? '☑ ' : '☐ ') + esc(v);
+    const rd = (k, opts) => opts.map(v => (p[k] === v ? '☑ ' : '☐ ') + esc(v)).join(' &nbsp; ');
+    h += `<div class="pg sheet iqp">${head('استبيان المريض السريع — التاريخ الطبي', 'قبل الفحص الأولي')}
+      <div class="box"><div class="box-t">١ | معلومات أساسية</div><div class="box-b grid2">${pv('الاسم الكامل', p.name)}${pv('العمر', p.age ? p.age + ' سنة' : '')}${pv('رقم الهاتف', p.phone)}${pv('التاريخ', p.iq_date)}</div></div>
+      <div class="box"><div class="box-t">٢ | سبب الزيارة</div><div class="box-b"><div class="grid2">${pv('وين المشكلة الأساسية؟', p.iq_where)}${pv('من إمتى؟', p.iq_since)}</div>
+        <div><b>كيف بدأت؟</b> ${IQ.onset.map(v => ck('iq_onset', v)).join(' &nbsp; ')}</div><div><b>شو الأعراض؟</b> ${IQ.sym.map(v => ck('iq_sym', v)).join(' &nbsp; ')}</div>
+        <div class="grid2">${pv('شدة الألم حالياً', p.pain == null ? '' : p.pain + ' / 10')}${pv('أهم نشاط صار صعب', p.iq_activity)}</div></div></div>
+      <div class="box"><div class="box-t">٣ | أسئلة سلامة مهمة</div><div class="box-b"><div class="grid2">${IQ.flags.map(v => `<div>${ck('iq_flags', v)}</div>`).join('')}</div><div>${ck('iq_flags', 'لا يوجد')}</div></div></div>
+      <div class="box"><div class="box-t">٤ | التاريخ الطبي</div><div class="box-b"><div>${IQ.hx.map(v => ck('iq_hx', v)).join(' &nbsp; ')} &nbsp; <b>أمراض أخرى:</b> ${esc(p.iq_other || '')}</div>
+        <div><b>هشاشة العظام:</b> ${rd('iq_osteo', ['لا', 'نعم', 'لا أعرف'])} &nbsp; | <b>الدرجة:</b> ${rd('iq_osteoGrade', ['خفيفة', 'متوسطة', 'شديدة', 'غير محددة'])} &nbsp; | <b>T-score:</b> ${esc(p.iq_tscore || '')}</div>
+        <div class="grid2"><div><b>حساسية:</b> ${rd('iq_allergy', ['لا', 'نعم'])}</div><div><b>أدوية/مميعات/كورتيزون:</b> ${rd('iq_meds', ['لا', 'نعم'])}</div>
+        <div><b>منظم قلب/معدن مزروع:</b> ${rd('iq_implant', ['لا', 'نعم'])}</div><div><b>عملية/كسر سابق:</b> ${rd('iq_surgery', ['لا', 'نعم'])}</div>
+        <div><b>حمل:</b> ${rd('iq_preg', ['لا', 'نعم', 'غير مؤكدة'])}</div><div><b>تفاصيل:</b> ${esc(p.iq_details || '')}</div></div></div></div>
+      <div class="box"><div class="box-t">٥ | تأكيد المعلومات</div><div class="box-b"><div style="font-size:9pt">أؤكد أن إجاباتي صحيحة بحسب معرفتي، وسأخبر الفريق عن أي تغير صحي مهم. أفهم أن هذا الاستبيان لا يحل محل الفحص أو الموافقة العلاجية المستنيرة.</div>
+        <div class="grid2">${pv('توقيع المريض/الولي', p.iq_sign)}${pv('رقم الملف', p.fileNo)}</div></div></div>
+      <div class="box"><div class="box-t">للاستخدام الداخلي فقط</div><div class="box-b grid2"><div><b>يلزم استقصاء/إحالة؟</b> ${rd('iq_referral', ['نعم', 'لا'])}</div><div><b>تمت المراجعة مع المريض؟</b> ${rd('iq_reviewed', ['نعم', 'لا'])}</div>
+        ${pv('اسم/توقيع المعالج', p.iq_therapist)}${pv('ملاحظات', p.iq_notes)}</div></div>
+      ${pfoot('Motion Life - استبيان أولي مختصر — معلومات سرية', phone)}</div>`;
     h += `<div class="pg sheet">${head('الحركة تبدأ من هنا', 'ملف المريض والتقييم السريري')}
       <div class="box"><div class="box-b grid4">${pv('رقم الملف', p.fileNo)}${pv('الخزانة / الدرج', p.cabinet)}${pv('الرف', p.shelf)}${pv('رقم التسلسل', p.serial)}</div></div>
       <div class="grid3" style="margin-bottom:10px">${pv('الاسم الكامل', p.name)}${pv('العمر', p.age)}<div class="f"><label>الجنس:</label><div class="pv">${p.gender === 'ذكر' ? '☑' : '☐'} ذكر &nbsp; ${p.gender === 'أنثى' ? '☑' : '☐'} أنثى</div></div>
@@ -784,7 +912,7 @@ function printPatient(p, exOnly) {
 /* ---------- live updates ---------- */
 DB.on((kind, info) => {
   if (kind === 'auth') return render();
-  if (kind === 'net') { const b = $('#syncB'); if (b) b.innerHTML = syncBadge(); return; }
+  if (kind === 'net' || kind === 'pending') { const b = $('#syncB'); if (b) b.innerHTML = syncBadge(); return; }
   if (kind !== 'data' || !DB.role) return;
   if (current === 'p') {
     const id = (location.hash.split('/')[1] || '');

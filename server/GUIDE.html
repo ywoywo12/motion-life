@@ -1,0 +1,42 @@
+<!doctype html><html lang="ar" dir="rtl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>دليل تشغيل خادم المركز</title>
+<style>body{font-family:Tahoma,Arial,sans-serif;max-width:820px;margin:auto;padding:24px 16px;line-height:1.8;color:#1d2b36;background:#f3f6f8}
+h1{color:#0f2c4c}h2{color:#0e5f6e;border-bottom:2px solid #13788a;padding-bottom:4px;margin-top:28px}
+.box{background:#fff;border-radius:12px;padding:14px 18px;margin:12px 0;box-shadow:0 2px 10px rgba(0,0,0,.05)}
+code,b.f{background:#e6f3f5;padding:1px 8px;border-radius:6px;direction:ltr;display:inline-block;font-family:Consolas,monospace}
+.warn{background:#fff6ec;border-right:4px solid #e0761f;padding:10px 14px;border-radius:8px}
+li{margin:6px 0}</style></head><body>
+<h1>Motion Life — تشغيل النظام داخل المركز بدون إنترنت</h1>
+<div class="box">لابتوب المركز يصبح «الخادم»: عليه تُحفظ كل الملفات والمواعيد. باقي الأجهزة (كمبيوترات، تابلت، جوالات) تفتح النظام من المتصفح عبر واي فاي المركز. إذا انقطع الإنترنت يستمر العمل طبيعياً، المهم أن يبقى اللابتوب شغالاً والراوتر شغالاً.</div>
+
+<h2>أولاً: على لابتوب المركز (مرة واحدة فقط)</h2>
+<ol class="box">
+<li>ثبّت برنامج <b>Node.js</b> من <code>https://nodejs.org</code> (اختر نسخة <b>LTS</b> ثم Next حتى النهاية). يحتاج إنترنت مرة واحدة فقط.</li>
+<li>انسخ مجلد <b class="f">MotionLife-Server</b> إلى مكان ثابت، مثلاً <code>C:\MotionLife-Server</code> (لا تتركه في التنزيلات).</li>
+<li>اضغط بالزر الأيمن على <b class="f">FIREWALL-ALLOW.bat</b> واختر <b>Run as administrator</b> (تشغيل كمسؤول). هذا يسمح للأجهزة الأخرى بالوصول.</li>
+<li>اضغط مرتين على <b class="f">START-SERVER.bat</b>. ستظهر نافذة سوداء فيها عنوان مثل <code>http://192.168.1.5:8080</code> — هذا هو رابط النظام لباقي الأجهزة. <b>لا تغلق هذه النافذة</b> (يمكن تصغيرها).</li>
+<li>إذا ظهرت رسالة من ويندوز تسأل عن السماح بالشبكة، اختر <b>Allow / السماح</b> على الشبكات الخاصة.</li>
+<li>(مستحسن) اضغط مرتين على <b class="f">AUTOSTART-ON.bat</b> ليشتغل الخادم تلقائياً كلما فُتح اللابتوب.</li>
+</ol>
+
+<h2>ثانياً: على باقي الأجهزة</h2>
+<ol class="box">
+<li>تأكد أن الجهاز متصل بنفس واي فاي المركز.</li>
+<li>افتح Chrome واكتب العنوان الظاهر في نافذة الخادم، مثل <code>http://192.168.1.5:8080</code></li>
+<li>احفظ الصفحة في المفضلة أو «إضافة إلى الشاشة الرئيسية» على الجوال.</li>
+<li>سجّل الدخول بحساب القسم: <code>women</code> أو <code>men</code> أو <code>admin</code>.</li>
+</ol>
+<div class="box"><b>كلمات المرور الأولى:</b> admin / <code>Motion2026</code> — women / <code>Women2026</code> — men / <code>Men2026</code><br>غيّرها فوراً من «الإعدادات ← تغيير كلمة المرور».</div>
+
+<h2>التسجيل الصوتي على الأجهزة الأخرى</h2>
+<div class="box">المتصفحات تسمح بالميكروفون فقط على رابط آمن. لذلك استخدم الرابط الثاني الظاهر في نافذة الخادم مثل <code>https://192.168.1.5:8443</code>. أول مرة ستظهر رسالة «الاتصال ليس خاصاً»: اضغط <b>Advanced / متقدم</b> ثم <b>Proceed / المتابعة</b>. هذا طبيعي لأن الشهادة خاصة بالمركز.<br>
+<div class="warn" style="margin-top:8px">تحويل الصوت إلى كتابة نفسه يحتاج إنترنت (خدمة Google في المتصفح). عند انقطاع الإنترنت يعمل كل شيء آخر طبيعياً، والتسجيل الصوتي فقط يتوقف.</div></div>
+
+<h2>أسئلة مهمة</h2>
+<div class="box">
+<p><b>انقطع الإنترنت؟</b> لا مشكلة، النظام لا يحتاجه. يكفي أن يبقى الراوتر واللابتوب شغالين.</p>
+<p><b>انقطع الاتصال بالخادم لحظياً؟</b> يظهر أعلى الصفحة «غير متصل بخادم المركز». التعديلات تُحفظ على الجهاز وتُرسل تلقائياً عند عودة الاتصال، ولا يضيع شيء. لا تُحدّث الصفحة حتى يعود الاتصال.</p>
+<p><b>تغيّر العنوان بعد إعادة تشغيل الراوتر؟</b> شاهد العنوان الجديد في نافذة الخادم أو من «الإعدادات ← المزامنة». لتثبيت العنوان: اطلب من فني الشبكة «حجز عنوان IP ثابت» للابتوب في الراوتر.</p>
+<p><b>اللابتوب:</b> اجعله موصولاً بالكهرباء، وأوقف وضع السكون: الإعدادات ← النظام ← الطاقة ← «أبداً» عند التوصيل بالكهرباء.</p>
+<p><b>أين البيانات؟</b> في مجلد <code>data</code> داخل مجلد الخادم. يُحفظ تلقائياً نسخة احتياطية يومية في <code>data\backups</code> (آخر 60 يوماً). انسخ مجلد <code>data</code> على فلاشة أسبوعياً، أو حمّل نسخة من «الإعدادات ← تنزيل نسخة كاملة» بحساب الإدارة.</p>
+<p><b>نقل الخادم للابتوب آخر؟</b> انسخ المجلد كاملاً (مع <code>data</code>) وشغّل START-SERVER.bat هناك.</p>
+</div></body></html>

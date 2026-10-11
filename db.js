@@ -35,6 +35,7 @@ const M = {
 
 /* ---------------- init ---------------- */
 M.init = async function () {
+  if (window.ML_SERVER && window.ML_SERVER.on) { this.mode = 'server'; return this._initServer(); }
   const c = cfg();
   if (c && window.firebase) {
     try {
@@ -63,6 +64,7 @@ M._setUser = function (user) {
 /* ---------------- auth ---------------- */
 M.login = async function (username, password) {
   username = String(username || '').trim().toLowerCase();
+  if (this.mode === 'server') return this._srvLogin(username, password);
   if (this.mode === 'cloud') {
     if (!ROLES[username]) throw new Error('bad');
     await this.auth.signInWithEmailAndPassword(username + '@' + DOMAIN, password);
@@ -75,10 +77,12 @@ M.login = async function (username, password) {
   this._startLocal();
 };
 M.logout = async function () {
+  if (this.mode === 'server') return this._srvLogout();
   if (this.mode === 'cloud') await this.auth.signOut();
   else { this.role = null; try { sessionStorage.removeItem('ml_role'); } catch (e) {} }
 };
 M.changePassword = async function (oldPw, newPw) {
+  if (this.mode === 'server') { const r = await this._req('POST', '/api/password', { old: oldPw, pass: newPw }); if (!r.ok) throw new Error('wrong'); return; }
   if (this.mode === 'cloud') {
     const cred = firebase.auth.EmailAuthProvider.credential(this.user.email, oldPw);
     await this.user.reauthenticateWithCredential(cred);
@@ -150,6 +154,7 @@ M.savePatient = function (p, keys) {
   p.updated = new Date().toISOString();
   this.patients.set(p.id, p);
   if (this.mode === 'local') return Promise.resolve(lsUpsert('ml_patients', p));
+  if (this.mode === 'server') return this._put(p.section, 'patients', p.id, p, keys);
   const ref = col(p.section, 'patients').doc(p.id);
   if (keys && keys.length) { const u = { updated: p.updated }; keys.forEach(k => { u[k] = clean(p[k] === undefined ? null : p[k]); }); return ref.set(u, { merge: true }); }
   const d = clean(p); delete d.id; return ref.set(d);
@@ -157,25 +162,140 @@ M.savePatient = function (p, keys) {
 M.deletePatient = function (p) {
   this.patients.delete(p.id);
   if (this.mode === 'local') return Promise.resolve(lsUpsert('ml_patients', p, true));
+  if (this.mode === 'server') return this._del(p.section, 'patients', p.id);
   return col(p.section, 'patients').doc(p.id).delete();
 };
 M.saveAppt = function (a) {
   this.appts.set(a.id, a);
   if (this.mode === 'local') return Promise.resolve(lsUpsert('ml_appts', a));
+  if (this.mode === 'server') return this._put(a.section, 'appts', a.id, a);
   const d = clean(a); delete d.id; return col(a.section, 'appts').doc(a.id).set(d);
 };
 M.saveMeta = function (sec) {
   const m = JSON.parse(JSON.stringify(this.meta[sec]));
   if (this.mode === 'local') { const all = ls.get('ml_meta', {}); all[sec] = m; return Promise.resolve(ls.set('ml_meta', all)); }
+  if (this.mode === 'server') return this._put(sec, 'meta', 'config', m);
   return col(sec, 'meta').doc('config').set(m);
 };
 M.deleteAppt = function (a) {
   this.appts.delete(a.id);
   if (this.mode === 'local') return Promise.resolve(lsUpsert('ml_appts', a, true));
+  if (this.mode === 'server') return this._del(a.section, 'appts', a.id);
   return col(a.section, 'appts').doc(a.id).delete();
 };
 
-window.addEventListener('online', () => { M.online = true; M.emit('net'); });
-window.addEventListener('offline', () => { M.online = false; M.emit('net'); });
+
+/* ---------------- server mode (خادم المركز الداخلي عبر الواي فاي) ---------------- */
+const CID = Math.random().toString(36).slice(2, 10);
+M._token = () => ls.get('ml_srv_token', null);
+M._req = async function (method, url, body) {
+  const r = await fetch(url, { method, headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + (this._token() || ''), 'X-Client': CID }, body: body ? JSON.stringify(body) : undefined, cache: 'no-store' });
+  let j = {}; try { j = await r.json(); } catch (e) {}
+  return Object.assign({ ok: r.ok, status: r.status }, j);
+};
+M._setOnline = function (v) { if (this.online !== v) { this.online = v; this.emit('net'); } };
+M._initServer = async function () {
+  this.online = false;
+  const t = this._token(), role = ls.get('ml_srv_role', null);
+  if (!t || !ROLES[role]) return;
+  this.role = role;
+  try { const r = await this._req('GET', '/api/me'); if (r.status === 401) { this._clearSrv(); return; } } catch (e) { /* الخادم غير متاح الآن: نعمل من النسخة المحفوظة */ }
+  await this._startServer();
+};
+M._clearSrv = function () { this.role = null; ls.set('ml_srv_token', null); ls.set('ml_srv_role', null); };
+M._srvLogin = async function (u, pw) {
+  let r; try { r = await this._req('POST', '/api/login', { user: u, pass: pw }); } catch (e) { const er = new Error('net'); er.code = 'auth/network-request-failed'; throw er; }
+  if (!r.ok) throw new Error('bad');
+  ls.set('ml_srv_token', r.token); ls.set('ml_srv_role', r.role); this.role = r.role;
+  await this._startServer();
+};
+M._srvLogout = async function () { try { await this._req('POST', '/api/logout'); } catch (e) {} if (this.es) this.es.close(); this._clearSrv(); this.patients.clear(); this.appts.clear(); };
+M._applyAll = function (data) {
+  this.patients.clear(); this.appts.clear();
+  Object.keys(data || {}).forEach(sec => {
+    const d = data[sec] || {};
+    Object.entries(d.patients || {}).forEach(([id, p]) => { p.id = id; p.section = sec; this.patients.set(id, p); });
+    Object.entries(d.appts || {}).forEach(([id, a]) => { a.id = id; a.section = sec; this.appts.set(id, a); });
+    if (d.meta && d.meta.config && d.meta.config.therapists) this.meta[sec] = d.meta.config;
+  });
+};
+M._cacheKey = () => 'ml_srv_cache_' + M.role;
+M._saveCache = function () {
+  clearTimeout(this._cT);
+  this._cT = setTimeout(() => { const out = {}; this.sections().forEach(s => out[s] = { patients: {}, appts: {}, meta: { config: this.meta[s] } });
+    this.patients.forEach(p => { if (out[p.section]) out[p.section].patients[p.id] = p; }); this.appts.forEach(a => { if (out[a.section]) out[a.section].appts[a.id] = a; });
+    ls.set(this._cacheKey(), out); }, 800);
+};
+M._startServer = async function () {
+  const cached = ls.get(this._cacheKey(), null);
+  if (cached) this._applyAll(cached);
+  await this._pull();
+  this._connectEvents();
+  if (!this._flushTimer) this._flushTimer = setInterval(() => this._flush(), 3000);
+};
+M._pull = async function () {
+  try { await this._flush(); const r = await this._req('GET', '/api/data');
+    if (r.ok) { this._applyAll(r.data); this._applyOutbox(); this._saveCache(); this._setOnline(true); this.emit('data', { remote: true, ids: [...this.patients.keys()] }); }
+    else if (r.status === 401) { this._clearSrv(); this.emit('auth'); }
+  } catch (e) { this._setOnline(false); }
+};
+M._connectEvents = function () {
+  if (this.es) this.es.close();
+  const es = this.es = new EventSource('/api/events?token=' + encodeURIComponent(this._token()));
+  let first = true;
+  es.onopen = () => { this._setOnline(true); if (!first) this._pull(); first = false; };
+  es.onerror = () => { this._setOnline(false); };
+  es.onmessage = ev => {
+    let m; try { m = JSON.parse(ev.data); } catch (e) { return; }
+    const remote = m.origin !== CID;
+    if (m.coll === 'meta') { if (m.op === 'put' && m.doc && m.doc.therapists) this.meta[m.sec] = m.doc; this.emit('data', { kind: 'meta', ids: [], remote }); this._saveCache(); return; }
+    const map = m.coll === 'patients' ? this.patients : this.appts;
+    if (m.op === 'del') map.delete(m.id);
+    else if (remote) {
+      const d = m.doc; d.id = m.id; d.section = m.sec; const cur = map.get(m.id);
+      if (cur) { const dirty = this.dirty[m.id]; Object.keys(d).forEach(k => { if (!dirty || !dirty.has(k)) cur[k] = d[k]; }); } else map.set(m.id, d);
+    }
+    this._saveCache();
+    if (remote) this.emit('data', { kind: m.coll, ids: [m.id], remote: true });
+  };
+};
+/* طابور الإرسال: لا يضيع أي تعديل إذا انقطع الاتصال بالخادم */
+M._outbox = () => ls.get('ml_srv_outbox', []);
+M._queue = function (item) {
+  const ob = this._outbox();
+  if (item.op === 'put' && item.keys) { const last = ob[ob.length - 1]; const prev = last && last.op === 'put' && last.sec === item.sec && last.coll === item.coll && last.id === item.id && last.keys ? last : null; if (prev) { prev.doc = item.doc; prev.keys = [...new Set(prev.keys.concat(item.keys))]; ls.set('ml_srv_outbox', ob); return; } }
+  ob.push(item); ls.set('ml_srv_outbox', ob);
+};
+M._applyOutbox = function () {   // تعديلات لم تصل الخادم بعد تبقى ظاهرة محلياً
+  this._outbox().forEach(it => { const map = it.coll === 'patients' ? this.patients : it.coll === 'appts' ? this.appts : null; if (!map) return;
+    if (it.op === 'del') map.delete(it.id); else { const cur = map.get(it.id); if (cur && it.keys) it.keys.forEach(k => cur[k] = it.doc[k]); else { const d = clean(it.doc); d.id = it.id; d.section = it.sec; map.set(it.id, d); } } });
+};
+M._flush = async function () {
+  if (this._flushing) return; this._flushing = true;
+  try {
+    let ob = this._outbox();
+    while (ob.length) {
+      const it = ob[0];
+      const r = it.op === 'del' ? await this._req('DELETE', `/api/doc/${it.sec}/${it.coll}/${it.id}`) : await this._req('PUT', `/api/doc/${it.sec}/${it.coll}/${it.id}`, { doc: it.doc, keys: it.keys });
+      if (r.status === 401) { this._clearSrv(); this.emit('auth'); break; }
+      ob = this._outbox(); ob.shift(); ls.set('ml_srv_outbox', ob);
+      this._setOnline(true);
+    }
+  } catch (e) { this._setOnline(false); }
+  this._flushing = false;
+  this.emit('pending', { n: this._outbox().length });
+};
+M._put = function (sec, coll, id, obj, keys) {
+  const doc = {}; if (keys && keys.length) { keys.concat(['updated']).forEach(k => { doc[k] = clean(obj[k] === undefined ? null : obj[k]); }); } else Object.assign(doc, clean(obj));
+  delete doc.id;
+  this._queue({ op: 'put', sec, coll, id, doc, keys: keys && keys.length ? keys : null });
+  this._saveCache();
+  return this._flush();
+};
+M._del = function (sec, coll, id) { this._queue({ op: 'del', sec, coll, id }); this._saveCache(); return this._flush(); };
+M.pending = () => M.mode === 'server' ? M._outbox().length : 0;
+
+window.addEventListener('online', () => { if (M.mode !== 'server') { M.online = true; M.emit('net'); } });
+window.addEventListener('offline', () => { if (M.mode !== 'server') { M.online = false; M.emit('net'); } });
 window.MLDB = M;
 })();
