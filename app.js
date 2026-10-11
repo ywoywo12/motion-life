@@ -493,7 +493,7 @@ async function serverMic(b, ta) {
       try { const r = await fetch('/api/stt', { method: 'POST', headers: { Authorization: 'Bearer ' + store.get('ml_srv_token', ''), 'Content-Type': 'audio/wav' }, body: wav });
         const j = await r.json().catch(() => ({}));
         if (r.ok && j.text) { ta.value = base() + j.text; ta.dispatchEvent(new Event('input')); }
-        else if (!r.ok) toast(j.error === 'stt_loading' ? 'محرك الصوت يبدأ التشغيل... أعد المحاولة بعد نصف دقيقة' : 'تعذّر تحويل هذا المقطع');
+        else if (!r.ok) toast(j.error === 'stt_loading' ? 'محرك الصوت يبدأ التشغيل... أعد المحاولة بعد نصف دقيقة' : j.error === 'stt_down' ? 'محرك الصوت لا يعمل الآن على لابتوب المركز — شغّل UPDATE-MOTION-LIFE.bat' : 'تعذّر تحويل هذا المقطع');
       } catch (e) { toast('لا يوجد اتصال بخادم المركز'); }
       pending--; status(); if (stopped && !pending) b.classList.remove('rec', 'busy');
     });
@@ -521,17 +521,34 @@ async function serverMic(b, ta) {
 }
 function browserMic(b, ta) {
   if (!SR) return micHelp('التسجيل الصوتي غير مدعوم في هذا المتصفح', '<p>افتح الموقع من متصفح <b>Google Chrome</b> أو <b>Microsoft Edge</b>، أو استخدم زر الميكروفون 🎤 في لوحة مفاتيح الجوال.</p>');
-  const r = new SR(); r.lang = 'ar-SY'; r.continuous = true; r.interimResults = true;
+  const android = /Android/i.test(navigator.userAgent);
   const base = ta.value ? ta.value.replace(/\s*$/, '') + ' ' : '';
-  let finalTxt = '';
-  r.onresult = ev => { let interim = ''; for (let i = ev.resultIndex; i < ev.results.length; i++) { const x = ev.results[i]; if (x.isFinal) finalTxt += x[0].transcript.trim() + ' '; else interim += x[0].transcript; }
-    ta.value = base + finalTxt + interim; ta.dispatchEvent(new Event('input')); };
-  r.onerror = ev => {
-    if (ev.error === 'not-allowed' || ev.error === 'service-not-allowed') { if (!window.isSecureContext) needSecure(); else toast('اسمح للموقع باستخدام الميكروفون من إعدادات المتصفح'); }
-    else if (ev.error === 'network') micHelp('خدمة تحويل الصوت غير متاحة', '<p>هذه الخدمة تعتمد على Google وتحتاج إنترنت، وقد تكون محجوبة في منطقتك.</p><p>الحل: استخدم النظام من <b>خادم المركز</b>، فالتحويل هناك يعمل على لابتوب المركز بدون إنترنت.</p>');
-    else if (ev.error !== 'no-speech' && ev.error !== 'aborted') toast('تعذّر التسجيل: ' + ev.error); };
-  r.onend = () => { b.classList.remove('rec'); $('span', b).textContent = 'تسجيل صوتي'; ta.value = base + finalTxt; ta.dispatchEvent(new Event('input')); rec = null; recBtn = null; };
-  try { r.start(); rec = r; recBtn = b; b.classList.add('rec'); $('span', b).textContent = '⏺ إيقاف التسجيل'; toast('🎤 تكلّم الآن... اضغط مرة ثانية للإيقاف'); } catch (e) { toast('تعذّر تشغيل الميكروفون'); }
+  let done = '', userStop = false, r = null;
+  const show = cur => { ta.value = base + done + cur; ta.dispatchEvent(new Event('input')); };
+  const startOne = () => {
+    r = new SR(); r.lang = 'ar-SY'; r.interimResults = true;
+    r.continuous = !android;              // أندرويد: جملة واحدة لكل جولة لتجنب تكرار الكلمات
+    let cur = '';
+    r.onresult = ev => {
+      if (android) { const last = ev.results[ev.results.length - 1]; cur = last[0].transcript.trim(); show(cur); return; }
+      let fin = '', interim = '';
+      for (let i = 0; i < ev.results.length; i++) { const x = ev.results[i]; if (x.isFinal) fin += x[0].transcript.trim() + ' '; else interim += x[0].transcript; }
+      cur = fin; show(fin + interim);
+    };
+    r.onerror = ev => {
+      if (ev.error === 'not-allowed' || ev.error === 'service-not-allowed') { userStop = true; if (!window.isSecureContext) needSecure(); else toast('اسمح للموقع باستخدام الميكروفون من إعدادات المتصفح'); }
+      else if (ev.error === 'network') { userStop = true; micHelp('خدمة تحويل الصوت غير متاحة', '<p>هذه الخدمة تعتمد على Google وتحتاج إنترنت، وقد تكون محجوبة في منطقتك.</p><p>الحل: استخدم النظام من <b>خادم المركز</b>، فالتحويل هناك يعمل على لابتوب المركز بدون إنترنت.</p>'); }
+      else if (ev.error !== 'no-speech' && ev.error !== 'aborted') toast('تعذّر التسجيل: ' + ev.error); };
+    r.onend = () => {
+      if (cur) done += cur.replace(/\s*$/, '') + ' ';
+      show('');
+      if (!userStop) { try { startOne(); return; } catch (e) {} }
+      b.classList.remove('rec'); $('span', b).textContent = 'تسجيل صوتي'; rec = null; recBtn = null;
+    };
+    r.start();
+  };
+  try { startOne(); rec = { stop() { userStop = true; try { r.stop(); } catch (e) {} } }; recBtn = b; b.classList.add('rec'); $('span', b).textContent = '⏺ إيقاف التسجيل'; toast('🎤 تكلّم الآن... اضغط مرة ثانية للإيقاف'); }
+  catch (e) { toast('تعذّر تشغيل الميكروفون'); }
 }
 function bindMics() {
   $$('[data-mic]').forEach(b => b.onclick = async () => {
@@ -540,7 +557,7 @@ function bindMics() {
     stopMic();
     const ta = document.querySelector(`[data-k="${b.dataset.mic}"]`);
     if (DB.mode === 'server') {
-      if (sttAvail === null) { try { sttAvail = !!(await (await fetch('/api/info')).json()).stt; } catch (e) { sttAvail = false; } }
+      if (sttAvail === null) { try { sttAvail = !!(await (await fetch('/api/info')).json()).stt; } catch (e) { sttAvail = null; return toast('لا يوجد اتصال بخادم المركز'); } }
       if (sttAvail) return serverMic(b, ta);
     }
     browserMic(b, ta);

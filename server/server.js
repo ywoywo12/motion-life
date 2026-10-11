@@ -74,7 +74,9 @@ const sttFiles = () => { if (!fs.existsSync(STT_DIR)) return null;
   const exe = ['whisper-server.exe', 'whisper-server'].map(f => path.join(STT_DIR, f)).find(f => fs.existsSync(f));
   const model = fs.readdirSync(STT_DIR).filter(f => /^ggml-.*\.bin$/.test(f) && !/silero/.test(f)).sort((a, b) => fs.statSync(path.join(STT_DIR, b)).size - fs.statSync(path.join(STT_DIR, a)).size)[0];
   return exe && model ? { exe, model: path.join(STT_DIR, model) } : null; };
-let sttProc = null, sttReady = false, sttTier = 0;
+let sttProc = null, sttReady = false, sttTier = 0, sttFails = 0;
+const STT_LOG = path.join(DATA, 'stt.log');
+function sttLog(t) { try { if (fs.existsSync(STT_LOG) && fs.statSync(STT_LOG).size > 300000) fs.renameSync(STT_LOG, STT_LOG + '.old'); fs.appendFileSync(STT_LOG, new Date().toISOString() + ' ' + t + '\n'); } catch (e) {} }
 function startSTT() {
   const f = sttFiles(); if (!f) { console.log('   (التسجيل الصوتي بدون إنترنت غير مثبت بعد — شغّل UPDATE-MOTION-LIFE.bat)'); return; }
   const threads = String(Math.max(2, Math.min(8, os.cpus().length - 1)));
@@ -89,12 +91,14 @@ function startSTT() {
   const started = Date.now();
   sttReady = false;
   sttProc = spawn(f.exe, args, { cwd: STT_DIR, windowsHide: true });
-  const onOut = d => { if (/listening/i.test(String(d))) sttReady = true; };
+  sttLog('START tier ' + sttTier + ': ' + path.basename(f.exe) + ' ' + args.join(' '));
+  const onOut = d => { const t = String(d); sttLog(t.trim()); if (/listening/i.test(t)) sttReady = true; };
   sttProc.stdout.on('data', onOut); sttProc.stderr.on('data', onOut);
-  sttProc.on('exit', () => {
+  sttProc.on('error', e => sttLog('SPAWN ERROR ' + e.message));
+  sttProc.on('exit', (code, sig) => { sttLog('EXIT code=' + code + ' signal=' + sig + ' after ' + Math.round((Date.now() - started) / 1000) + 's');
     sttReady = false; sttProc = null;
     if (Date.now() - started < 15000 && sttTier < tiers.length - 1) { sttTier++; return startSTT(); }   // الخيارات غير مدعومة → إعدادات أبسط
-    console.log('   (محرك الصوت توقف، إعادة تشغيل بعد 5 ثوانٍ)'); setTimeout(startSTT, 5000);
+    sttFails++; console.log('   (محرك الصوت توقف، إعادة تشغيل)'); setTimeout(startSTT, Math.min(60000, 5000 * sttFails));
   });
   setTimeout(() => { if (sttProc) sttReady = true; }, 30000);
   console.log('   التسجيل الصوتي بدون إنترنت: مفعّل (' + path.basename(f.model) + (vad && sttTier === 0 ? ' + كشف الكلام' : '') + ', مستوى ' + sttTier + ')');
@@ -118,7 +122,8 @@ function cleanText(t) {
     const out = [];
     for (let i = 0; i < w.length; i++) {
       out.push(w[i]);
-      if (out.length >= 2 * n) { const a = out.slice(-2 * n, -n).join(' '), b = out.slice(-n).join(' '); if (a === b) out.splice(-n, n); }
+      if (out.length >= 2 * n) { const nz = x => x.map(y => y.replace(/[\u064B-\u0652\u0640.,،؛;:!?؟"'«»…-]/g, '')).join(' ');
+        const a = nz(out.slice(-2 * n, -n)), b = nz(out.slice(-n)); if (a && a === b) out.splice(-n, n); }
     }
     w = out;
   }
@@ -130,7 +135,7 @@ const rawBody = req => new Promise((ok, bad) => { const parts = []; let n = 0; r
 async function api(req, res, url) {
   const p = url.pathname;
   if (p === '/api/ping') return send(res, 200, { ok: true, time: Date.now() });
-  if (p === '/api/info') return send(res, 200, { addresses: lanAddresses(), port: PORT, httpsPort: HTTPS_PORT, stt: !!sttProc });
+  if (p === '/api/info') return send(res, 200, { addresses: lanAddresses(), port: PORT, httpsPort: HTTPS_PORT, stt: !!sttFiles(), sttRunning: !!sttProc && sttReady, sttTier });
   if (p === '/api/login' && req.method === 'POST') {
     const { user, pass } = await body(req); const u = String(user || '').trim().toLowerCase();
     if (!users[u] || hashPw(pass, users[u].salt) !== users[u].hash) return send(res, 401, { error: 'bad' });
@@ -140,7 +145,8 @@ async function api(req, res, url) {
   const a = auth(req); if (!a) return send(res, 401, { error: 'auth' });
   if (p === '/api/me') return send(res, 200, { role: a.role });
   if (p === '/api/stt' && req.method === 'POST') {
-    if (!sttProc) return send(res, 503, { error: 'stt_off' });
+    if (!sttFiles()) return send(res, 503, { error: 'stt_off' });
+    if (!sttProc) return send(res, 503, { error: 'stt_down' });
     const wav = await rawBody(req);
     try { return send(res, 200, { text: await transcribe(wav) }); } catch (e) { return send(res, 502, { error: sttReady ? 'stt_fail' : 'stt_loading' }); }
   }
