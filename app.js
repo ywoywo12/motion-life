@@ -71,7 +71,7 @@ function syncBadge() {
 function shell(active, inner) {
   const nav = [['home', 'الرئيسية'], ['appts', 'المواعيد'], ['patients', 'المرضى'], ['library', 'مكتبة التمارين'], ['devices', 'الأجهزة والبروتوكولات'], ['settings', 'الإعدادات']];
   return `<header class="topbar role-${DB.role}"><div class="topbar-in">
-    <div class="brand" data-go="home"><b>Motion Life</b><small>مركز العلاج الفيزيائي وإعادة التأهيل</small></div>
+    <div class="brand" data-go="home"><b>Motion Life</b><small>مركز الأخصائي يزن جهاد العلواني</small></div>
     <div class="who"><span class="role-tag">${esc(DB.ROLES[DB.role])}</span><span id="syncB">${syncBadge()}</span></div>
     <nav class="nav">${nav.map(([k, t]) => `<button data-go="${k}" class="${active === k ? 'on' : ''}">${t}</button>`).join('')}</nav>
   </div></header><main class="wrap">${inner}</main>`;
@@ -169,7 +169,7 @@ function bindPatients() {
 }
 
 /* ---------- patient file ---------- */
-const head = (title, sub) => `<div class="sheet-head"><div class="logo"><b>Motion Life</b><small>مركز العلاج الفيزيائي وإعادة التأهيل</small></div>
+const head = (title, sub) => `<div class="sheet-head"><div class="logo"><b>Motion Life</b><small>مركز الأخصائي يزن جهاد العلواني</small></div>
   <div class="tag"><b>${title}</b>${sub}</div></div>`;
 const inp = (k, label, type = 'text', v = '') => `<div class="f"><label>${label}:</label><input data-k="${k}" type="${type}" value="${esc(v)}"></div>`;
 const ta = (k, rows, v) => `<textarea class="lined" data-k="${k}" rows="${rows}">${esc(v)}</textarea>`;
