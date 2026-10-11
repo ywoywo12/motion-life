@@ -446,27 +446,86 @@ function bindPatient(p, tab) {
     codes.forEach(c => { if (!p.exercises.some(x => x.code === c)) p.exercises.push({ code: c, dosage: EXM[c].dosage, note: '' }); }); redraw(); toast('تمت إضافة ' + codes.length + ' تمرين'); }));
 }
 
-/* ---------- voice to text (التسجيل الصوتي وتحويله لكتابة) ---------- */
+/* ---------- voice to text (التسجيل الصوتي وتحويله لكتابة) ----------
+   على خادم المركز: التحويل يتم على لابتوب المركز بدون إنترنت (whisper).
+   على النسخة الأونلاين: خدمة المتصفح (تحتاج إنترنت). */
 const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
 const micBtn = k => `<button type="button" class="mic" data-mic="${k}" title="سجّل بصوتك وسيُكتب تلقائياً">🎤 <span>تسجيل صوتي</span></button>`;
-let rec = null, recBtn = null;
+let rec = null, recBtn = null, sttAvail = null;
 function stopMic() { if (rec) { try { rec.stop(); } catch (e) {} } }
+function micHelp(title, body) { openModal(`<div class="modal-h"><h3>${title}</h3><span class="spacer"></span><button class="x" id="mc">×</button></div>${body}`); $('#mc').onclick = closeModal; }
+function needSecure() {
+  const host = location.hostname, https = `https://${host}:8443${location.pathname}${location.hash}`;
+  micHelp('التسجيل الصوتي يحتاج الرابط الآمن', `<p>المتصفح لا يسمح باستخدام الميكروفون إلا على الرابط الآمن الذي يبدأ بـ <b dir="ltr">https</b>.</p>
+    <p>افتح هذا الرابط وسجّل الدخول مرة واحدة:</p><p><a class="btn big" href="${https}" dir="ltr">${https.split('#')[0]}</a></p>
+    <p class="hint">أول مرة ستظهر رسالة «الاتصال ليس خاصاً»: اضغط «متقدم» ثم «متابعة». هذا طبيعي لأن الشهادة خاصة بالمركز.</p>`);
+}
+function wavFrom(chunks, rate) {
+  let n = 0; chunks.forEach(c => n += c.length);
+  const buf = new ArrayBuffer(44 + n * 2), v = new DataView(buf);
+  const w = (o, s) => { for (let i = 0; i < s.length; i++) v.setUint8(o + i, s.charCodeAt(i)); };
+  w(0, 'RIFF'); v.setUint32(4, 36 + n * 2, true); w(8, 'WAVE'); w(12, 'fmt '); v.setUint32(16, 16, true); v.setUint16(20, 1, true); v.setUint16(22, 1, true);
+  v.setUint32(24, rate, true); v.setUint32(28, rate * 2, true); v.setUint16(32, 2, true); v.setUint16(34, 16, true); w(36, 'data'); v.setUint32(40, n * 2, true);
+  let o = 44; chunks.forEach(c => { for (let i = 0; i < c.length; i++, o += 2) { const x = Math.max(-1, Math.min(1, c[i])); v.setInt16(o, x < 0 ? x * 0x8000 : x * 0x7fff, true); } });
+  return new Blob([buf], { type: 'audio/wav' });
+}
+async function serverMic(b, ta) {
+  if (!window.isSecureContext || !navigator.mediaDevices) return needSecure();
+  let stream; try { stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, channelCount: 1 } }); }
+  catch (e) { return micHelp('الميكروفون غير مسموح', '<p>اسمح للموقع باستخدام الميكروفون: اضغط على رمز القفل 🔒 بجانب العنوان ← الأذونات ← الميكروفون ← سماح، ثم أعد المحاولة.</p>'); }
+  const ctx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 16000 });
+  const src = ctx.createMediaStreamSource(stream), proc = ctx.createScriptProcessor(4096, 1, 1);
+  const rate = ctx.sampleRate; let seg = [], segLen = 0, silent = 0, voiced = false, queue = Promise.resolve(), pending = 0, stopped = false;
+  const base = () => ta.value ? ta.value.replace(/\s*$/, '') + ' ' : '';
+  const status = () => { $('span', b).textContent = stopped ? (pending ? 'جارٍ الكتابة...' : 'تسجيل صوتي') : (pending ? '⏺ إيقاف — جارٍ الكتابة...' : '⏺ إيقاف التسجيل'); };
+  const flush = () => {
+    if (!segLen || !voiced) { seg = []; segLen = 0; voiced = false; return; }
+    const wav = wavFrom(seg, rate); seg = []; segLen = 0; voiced = false; pending++; status();
+    queue = queue.then(async () => {
+      try { const r = await fetch('/api/stt', { method: 'POST', headers: { Authorization: 'Bearer ' + store.get('ml_srv_token', ''), 'Content-Type': 'audio/wav' }, body: wav });
+        const j = await r.json().catch(() => ({}));
+        if (r.ok && j.text) { ta.value = base() + j.text; ta.dispatchEvent(new Event('input')); }
+        else if (!r.ok) toast(j.error === 'stt_loading' ? 'محرك الصوت يبدأ التشغيل... أعد المحاولة بعد قليل' : 'تعذّر تحويل هذا المقطع');
+      } catch (e) { toast('لا يوجد اتصال بخادم المركز'); }
+      pending--; status(); if (stopped && !pending) b.classList.remove('rec', 'busy');
+    });
+  };
+  proc.onaudioprocess = e => {
+    const d = new Float32Array(e.inputBuffer.getChannelData(0)); let sum = 0; for (let i = 0; i < d.length; i++) sum += d[i] * d[i];
+    const rms = Math.sqrt(sum / d.length); seg.push(d); segLen += d.length;
+    if (rms > 0.012) { voiced = true; silent = 0; } else silent += d.length;
+    const secs = segLen / rate;
+    if ((secs > 3 && silent / rate > 0.8) || secs > 20) flush();   // يقطع عند التوقف عن الكلام
+  };
+  src.connect(proc); proc.connect(ctx.destination);
+  rec = { stop() { stopped = true; flush(); try { proc.disconnect(); src.disconnect(); stream.getTracks().forEach(t => t.stop()); ctx.close(); } catch (e) {} rec = null; recBtn = null; if (!pending) b.classList.remove('rec'); else b.classList.add('busy'); status(); } };
+  recBtn = b; b.classList.add('rec'); status(); toast('🎤 تكلّم الآن... يُكتب الكلام بعد كل توقف قصير. اضغط مرة ثانية للإيقاف');
+}
+function browserMic(b, ta) {
+  if (!SR) return micHelp('التسجيل الصوتي غير مدعوم في هذا المتصفح', '<p>افتح الموقع من متصفح <b>Google Chrome</b> أو <b>Microsoft Edge</b>، أو استخدم زر الميكروفون 🎤 في لوحة مفاتيح الجوال.</p>');
+  const r = new SR(); r.lang = 'ar-SY'; r.continuous = true; r.interimResults = true;
+  const base = ta.value ? ta.value.replace(/\s*$/, '') + ' ' : '';
+  let finalTxt = '';
+  r.onresult = ev => { let interim = ''; for (let i = ev.resultIndex; i < ev.results.length; i++) { const x = ev.results[i]; if (x.isFinal) finalTxt += x[0].transcript.trim() + ' '; else interim += x[0].transcript; }
+    ta.value = base + finalTxt + interim; ta.dispatchEvent(new Event('input')); };
+  r.onerror = ev => {
+    if (ev.error === 'not-allowed' || ev.error === 'service-not-allowed') { if (!window.isSecureContext) needSecure(); else toast('اسمح للموقع باستخدام الميكروفون من إعدادات المتصفح'); }
+    else if (ev.error === 'network') micHelp('خدمة تحويل الصوت غير متاحة', '<p>هذه الخدمة تعتمد على Google وتحتاج إنترنت، وقد تكون محجوبة في منطقتك.</p><p>الحل: استخدم النظام من <b>خادم المركز</b>، فالتحويل هناك يعمل على لابتوب المركز بدون إنترنت.</p>');
+    else if (ev.error !== 'no-speech' && ev.error !== 'aborted') toast('تعذّر التسجيل: ' + ev.error); };
+  r.onend = () => { b.classList.remove('rec'); $('span', b).textContent = 'تسجيل صوتي'; ta.value = base + finalTxt; ta.dispatchEvent(new Event('input')); rec = null; recBtn = null; };
+  try { r.start(); rec = r; recBtn = b; b.classList.add('rec'); $('span', b).textContent = '⏺ إيقاف التسجيل'; toast('🎤 تكلّم الآن... اضغط مرة ثانية للإيقاف'); } catch (e) { toast('تعذّر تشغيل الميكروفون'); }
+}
 function bindMics() {
-  $$('[data-mic]').forEach(b => b.onclick = () => {
-    if (!SR) return openModal(`<div class="modal-h"><h3>التسجيل الصوتي غير مدعوم في هذا المتصفح</h3><span class="spacer"></span><button class="x" id="mc">×</button></div>
-      <p>افتح الموقع من متصفح <b>Google Chrome</b> أو <b>Microsoft Edge</b> (على الكمبيوتر أو الأندرويد)، أو <b>Safari</b> على الآيفون.<br>
-      بديل سريع: اضغط على الحقل ثم زر الميكروفون 🎤 في لوحة مفاتيح الجوال.</p>`) || ($('#mc').onclick = closeModal);
+  $$('[data-mic]').forEach(b => b.onclick = async () => {
     if (recBtn === b) return stopMic();
+    if (b.classList.contains('busy')) return;
     stopMic();
     const ta = document.querySelector(`[data-k="${b.dataset.mic}"]`);
-    const r = new SR(); r.lang = 'ar-SY'; r.continuous = true; r.interimResults = true;
-    const base = ta.value ? ta.value.replace(/\s*$/, '') + ' ' : '';
-    let finalTxt = '';
-    r.onresult = ev => { let interim = ''; for (let i = ev.resultIndex; i < ev.results.length; i++) { const x = ev.results[i]; if (x.isFinal) finalTxt += x[0].transcript.trim() + ' '; else interim += x[0].transcript; }
-      ta.value = base + finalTxt + interim; ta.dispatchEvent(new Event('input')); };
-    r.onerror = ev => { if (ev.error === 'not-allowed' || ev.error === 'service-not-allowed') toast('اسمح للموقع باستخدام الميكروفون من إعدادات المتصفح'); else if (ev.error === 'network') toast('التسجيل الصوتي يحتاج إنترنت'); };
-    r.onend = () => { b.classList.remove('rec'); $('span', b).textContent = 'تسجيل صوتي'; ta.value = base + finalTxt; ta.dispatchEvent(new Event('input')); rec = null; recBtn = null; };
-    try { r.start(); rec = r; recBtn = b; b.classList.add('rec'); $('span', b).textContent = 'إيقاف التسجيل'; toast('🎤 تكلّم الآن... اضغط مرة ثانية للإيقاف'); } catch (e) { toast('تعذّر تشغيل الميكروفون'); }
+    if (DB.mode === 'server') {
+      if (sttAvail === null) { try { sttAvail = !!(await (await fetch('/api/info')).json()).stt; } catch (e) { sttAvail = false; } }
+      if (sttAvail) return serverMic(b, ta);
+    }
+    browserMic(b, ta);
   });
 }
 
@@ -765,7 +824,7 @@ function bindTherapists() {
 function bindSettings() {
   bindTherapists(); liveRedraw = bindTherapists;
   if ($('#srvInfo')) fetch('/api/info').then(r => r.json()).then(i => { $('#srvInfo').innerHTML = '📶 لفتح النظام على أي جهاز متصل بواي فاي المركز اكتب في المتصفح:<br>' +
-    i.addresses.map(ip => `<b dir="ltr" style="font-size:18px">http://${ip}:${i.port}</b>`).join('<br>') + '<br><small>للتسجيل الصوتي على الأجهزة الأخرى استخدم: ' + i.addresses.map(ip => `<span dir="ltr">https://${ip}:${i.httpsPort}</span>`).join(' ، ') + '</small>'; }).catch(() => { $('#srvInfo').textContent = 'الخادم غير متاح الآن.'; });
+    i.addresses.map(ip => `<b dir="ltr" style="font-size:18px">https://${ip}:${i.httpsPort}</b>`).join('<br>') + '<br><small>أول مرة على كل جهاز: «متقدم» ثم «متابعة». التسجيل الصوتي بدون إنترنت: ' + (i.stt ? '✅ مفعّل' : '❌ غير مثبت (شغّل UPDATE-MOTION-LIFE.bat على اللابتوب)') + '</small>'; }).catch(() => { $('#srvInfo').textContent = 'الخادم غير متاح الآن.'; });
   if ($('#srvBk')) $('#srvBk').onclick = async e => { e.preventDefault(); const r = await fetch('/api/backup', { headers: { Authorization: 'Bearer ' + store.get('ml_srv_token', '') } }); const b = await r.blob();
     const a = document.createElement('a'); a.href = URL.createObjectURL(b); a.download = 'motion-life-server-backup-' + today() + '.json'; document.body.appendChild(a); a.click(); a.remove(); };
   $$('[data-addth]').forEach(b => b.onclick = () => { const sec = b.dataset.addth, inp = $('#thn-' + sec), name = inp.value.trim(); if (!name) return toast('اكتب الاسم أولاً');

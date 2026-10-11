@@ -65,11 +65,42 @@ function lanAddresses() {
   return out;
 }
 
+
+/* ---------- تحويل الصوت إلى كتابة بدون إنترنت (whisper.cpp على هذا اللابتوب) ---------- */
+const { spawn } = require('child_process');
+const STT_DIR = path.join(BASE, 'stt');
+const STT_PORT = 8178;
+const sttFiles = () => { if (!fs.existsSync(STT_DIR)) return null;
+  const exe = ['whisper-server.exe', 'whisper-server'].map(f => path.join(STT_DIR, f)).find(f => fs.existsSync(f));
+  const model = fs.readdirSync(STT_DIR).filter(f => /^ggml-.*\.bin$/.test(f)).sort((a, b) => fs.statSync(path.join(STT_DIR, b)).size - fs.statSync(path.join(STT_DIR, a)).size)[0];
+  return exe && model ? { exe, model: path.join(STT_DIR, model) } : null; };
+let sttProc = null, sttReady = false;
+function startSTT() {
+  const f = sttFiles(); if (!f) { console.log('   (التسجيل الصوتي بدون إنترنت غير مثبت بعد — شغّل UPDATE-MOTION-LIFE.bat)'); return; }
+  const threads = String(Math.max(2, Math.min(8, os.cpus().length - 1)));
+  sttProc = spawn(f.exe, ['-m', f.model, '-l', 'ar', '-t', threads, '--host', '127.0.0.1', '--port', String(STT_PORT)], { cwd: STT_DIR, windowsHide: true });
+  sttProc.stdout.on('data', d => { if (/listening|server is listening|HTTP server/i.test(String(d))) sttReady = true; });
+  sttProc.stderr.on('data', d => { if (/listening/i.test(String(d))) sttReady = true; });
+  sttProc.on('exit', code => { sttReady = false; sttProc = null; console.log('   (محرك الصوت توقف، إعادة تشغيل بعد 5 ثوانٍ)'); setTimeout(startSTT, 5000); });
+  setTimeout(() => { sttReady = true; }, 20000);
+  console.log('   التسجيل الصوتي بدون إنترنت: مفعّل (' + path.basename(f.model) + ')');
+}
+process.on('exit', () => { try { sttProc && sttProc.kill(); } catch (e) {} });
+async function transcribe(wav) {
+  const fd = new FormData();
+  fd.append('file', new Blob([wav], { type: 'audio/wav' }), 'audio.wav');
+  fd.append('language', 'ar'); fd.append('response_format', 'json'); fd.append('temperature', '0.0');
+  const r = await fetch('http://127.0.0.1:' + STT_PORT + '/inference', { method: 'POST', body: fd });
+  if (!r.ok) throw new Error('stt ' + r.status);
+  const j = await r.json(); return String(j.text || '').replace(/\[[^\]]*\]/g, '').replace(/\s+/g, ' ').trim();
+}
+const rawBody = req => new Promise((ok, bad) => { const parts = []; let n = 0; req.on('data', d => { n += d.length; if (n > 60e6) { bad(new Error('too big')); req.destroy(); } else parts.push(d); }); req.on('end', () => ok(Buffer.concat(parts))); });
+
 /* ---------- API ---------- */
 async function api(req, res, url) {
   const p = url.pathname;
   if (p === '/api/ping') return send(res, 200, { ok: true, time: Date.now() });
-  if (p === '/api/info') return send(res, 200, { addresses: lanAddresses(), port: PORT, httpsPort: HTTPS_PORT });
+  if (p === '/api/info') return send(res, 200, { addresses: lanAddresses(), port: PORT, httpsPort: HTTPS_PORT, stt: !!sttProc });
   if (p === '/api/login' && req.method === 'POST') {
     const { user, pass } = await body(req); const u = String(user || '').trim().toLowerCase();
     if (!users[u] || hashPw(pass, users[u].salt) !== users[u].hash) return send(res, 401, { error: 'bad' });
@@ -78,6 +109,11 @@ async function api(req, res, url) {
   }
   const a = auth(req); if (!a) return send(res, 401, { error: 'auth' });
   if (p === '/api/me') return send(res, 200, { role: a.role });
+  if (p === '/api/stt' && req.method === 'POST') {
+    if (!sttProc) return send(res, 503, { error: 'stt_off' });
+    const wav = await rawBody(req);
+    try { return send(res, 200, { text: await transcribe(wav) }); } catch (e) { return send(res, 502, { error: sttReady ? 'stt_fail' : 'stt_loading' }); }
+  }
   if (p === '/api/logout' && req.method === 'POST') { delete sessions[a.token]; writeJSON(SESSF, sessions); return send(res, 200, { ok: true }); }
   if (p === '/api/password' && req.method === 'POST') {
     const { old, pass } = await body(req); const u = users[a.role];
@@ -136,8 +172,13 @@ function serveStatic(req, res, url) {
     res.end(buf);
   });
 }
+const isLocal = req => { const a = (req.socket.remoteAddress || '').replace('::ffff:', ''); return a === '127.0.0.1' || a === '::1'; };
 const handler = (req, res) => {
   const url = new URL(req.url, 'http://local');
+  if (!req.socket.encrypted && httpsOn && !isLocal(req) && !url.pathname.startsWith('/api/') && req.method === 'GET') {   // الأجهزة الأخرى → الرابط الآمن (للميكروفون)
+    const host = (req.headers.host || '').split(':')[0];
+    res.writeHead(302, { Location: 'https://' + host + ':' + HTTPS_PORT + url.pathname + url.search }); return res.end();
+  }
   if (url.pathname.startsWith('/api/')) return api(req, res, url).catch(e => { console.error(e); try { send(res, 500, { error: 'server' }); } catch (x) {} });
   serveStatic(req, res, url);
 };
@@ -151,10 +192,10 @@ httpSrv.listen(PORT, '0.0.0.0', () => {
   console.log('   Motion Life — خادم المركز يعمل الآن');
   console.log('  ==============================================');
   console.log('   على هذا اللابتوب:   http://localhost:' + PORT);
-  ips.forEach(ip => console.log('   على باقي الأجهزة:   http://' + ip + ':' + PORT));
-  if (httpsOn) ips.forEach(ip => console.log('   (للتسجيل الصوتي):   https://' + ip + ':' + HTTPS_PORT));
+  ips.forEach(ip => console.log('   على باقي الأجهزة:   https://' + ip + ':' + HTTPS_PORT + '   (أو http://' + ip + ':' + PORT + ')'));
   console.log('   البيانات محفوظة في:  ' + DATA);
   console.log('   لا تغلق هذه النافذة أثناء العمل.\n');
+  startSTT();
 });
 // HTTPS (needed by browsers for the microphone on other devices)
 let httpsOn = false;

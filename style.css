@@ -214,6 +214,7 @@ table.sess input[type=date]{min-width:120px}
 .mic{border:1.5px solid var(--line);background:#fff;border-radius:999px;padding:3px 12px;font-size:13px;font-weight:700;cursor:pointer;color:var(--teal-d)}
 .mic:hover{border-color:var(--teal)}
 .mic.rec{background:#c62828;border-color:#c62828;color:#fff;animation:pulse 1.2s infinite}
+.mic.busy{background:#fff6ec;border-color:#f0c79e;color:#9a4a0c}
 @keyframes pulse{50%{box-shadow:0 0 0 6px rgba(198,40,40,.18)}}
 /* appointments */
 .appt-head{background:#fff;border-radius:14px;padding:14px 16px;margin-bottom:12px;border-top:5px solid var(--teal)}
