@@ -141,7 +141,8 @@ function startSTT() {
   sttProc.on('exit', (code, sig) => { sttLog('EXIT code=' + code + ' signal=' + sig + ' after ' + Math.round((Date.now() - started) / 1000) + 's');
     sttReady = false; sttProc = null;
     if (Date.now() - started < 15000 && sttTier < tiers.length - 1) { sttTier++; return startSTT(); }   // الخيارات غير مدعومة → إعدادات أبسط
-    sttFails++; console.log('   (محرك الصوت توقف، إعادة تشغيل)'); setTimeout(startSTT, Math.min(60000, 5000 * sttFails));
+    sttFails++; if (sttFails > 5) { sttLog('GIVING UP after repeated failures'); console.log('   (محرك الصوت المحلي لا يعمل على هذا الجهاز — تم إيقاف المحاولات)'); return; }
+    setTimeout(startSTT, Math.min(60000, 5000 * sttFails));
   });
   setTimeout(() => { if (sttProc) sttReady = true; }, 30000);
   console.log('   التسجيل الصوتي بدون إنترنت: مفعّل (' + path.basename(f.model) + (vad && sttTier === 0 ? ' + كشف الكلام' : '') + ', مستوى ' + sttTier + ')');
