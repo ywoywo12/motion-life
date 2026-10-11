@@ -209,7 +209,7 @@ M._srvLogin = async function (u, pw) {
   ls.set('ml_srv_token', r.token); ls.set('ml_srv_role', r.role); this.role = r.role;
   await this._startServer();
 };
-M._srvLogout = async function () { try { await this._req('POST', '/api/logout'); } catch (e) {} if (this.es) this.es.close(); this._clearSrv(); this.patients.clear(); this.appts.clear(); };
+M._srvLogout = async function () { try { await this._req('POST', '/api/logout'); } catch (e) {} this._clearSrv(); this.patients.clear(); this.appts.clear(); };
 M._applyAll = function (data) {
   this.patients.clear(); this.appts.clear();
   Object.keys(data || {}).forEach(sec => {
@@ -235,29 +235,47 @@ M._startServer = async function () {
 };
 M._pull = async function () {
   try { await this._flush(); const r = await this._req('GET', '/api/data');
-    if (r.ok) { this._applyAll(r.data); this._applyOutbox(); this._saveCache(); this._setOnline(true); this.emit('data', { remote: true, ids: [...this.patients.keys()] }); }
+    if (r.ok) { this._applyAll(r.data); this._seq = r.seq || 0; this._applyOutbox(); this._saveCache(); this._setOnline(true); this.emit('data', { remote: true, ids: [...this.patients.keys()] }); }
     else if (r.status === 401) { this._clearSrv(); this.emit('auth'); }
   } catch (e) { this._setOnline(false); }
 };
+/* استقبال التحديثات اللحظية: استعلام طويل عبر fetch (يعمل على كل المتصفحات والتابات حتى مع شهادة المركز الخاصة) */
+M._applyMsg = function (m) {
+  const remote = m.origin !== CID;
+  if (m.coll === 'meta') { if (m.op === 'put' && m.doc && m.doc.therapists) this.meta[m.sec] = m.doc; this.emit('data', { kind: 'meta', ids: [], remote }); return; }
+  const map = m.coll === 'patients' ? this.patients : this.appts;
+  if (m.op === 'del') map.delete(m.id);
+  else if (remote) {
+    const d = JSON.parse(JSON.stringify(m.doc)); d.id = m.id; d.section = m.sec; const cur = map.get(m.id);
+    if (cur) { const dirty = this.dirty[m.id]; Object.keys(d).forEach(k => { if (!dirty || !dirty.has(k)) cur[k] = d[k]; }); } else map.set(m.id, d);
+  }
+  if (remote) this.emit('data', { kind: m.coll, ids: [m.id], remote: true });
+};
 M._connectEvents = function () {
-  if (this.es) this.es.close();
-  const es = this.es = new EventSource('/api/events?token=' + encodeURIComponent(this._token()));
-  let first = true;
-  es.onopen = () => { this._setOnline(true); if (!first) this._pull(); first = false; };
-  es.onerror = () => { this._setOnline(false); };
-  es.onmessage = ev => {
-    let m; try { m = JSON.parse(ev.data); } catch (e) { return; }
-    const remote = m.origin !== CID;
-    if (m.coll === 'meta') { if (m.op === 'put' && m.doc && m.doc.therapists) this.meta[m.sec] = m.doc; this.emit('data', { kind: 'meta', ids: [], remote }); this._saveCache(); return; }
-    const map = m.coll === 'patients' ? this.patients : this.appts;
-    if (m.op === 'del') map.delete(m.id);
-    else if (remote) {
-      const d = m.doc; d.id = m.id; d.section = m.sec; const cur = map.get(m.id);
-      if (cur) { const dirty = this.dirty[m.id]; Object.keys(d).forEach(k => { if (!dirty || !dirty.has(k)) cur[k] = d[k]; }); } else map.set(m.id, d);
+  if (this._polling) return; this._polling = true;
+  const loop = async () => {
+    while (this.role && this.mode === 'server') {
+      try {
+        const ctl = new AbortController(); const to = setTimeout(() => ctl.abort(), 35000);
+        const r = await fetch('/api/changes?since=' + (this._seq || 0), { headers: { Authorization: 'Bearer ' + (this._token() || ''), 'X-Client': CID }, cache: 'no-store', signal: ctl.signal });
+        clearTimeout(to);
+        if (r.status === 401) { this._clearSrv(); this.emit('auth'); break; }
+        if (!r.ok) throw new Error('changes ' + r.status);
+        const j = await r.json();
+        this._setOnline(true);
+        if (j.reset) { await this._pull(); continue; }
+        (j.changes || []).forEach(m => this._applyMsg(m));
+        if (j.changes && j.changes.length) this._saveCache();
+        this._seq = j.seq;
+        this._flush();
+      } catch (e) {
+        await new Promise(r => setTimeout(r, 3000));
+        await this._pull();          // يحدد حالة الاتصال بنفسه
+      }
     }
-    this._saveCache();
-    if (remote) this.emit('data', { kind: m.coll, ids: [m.id], remote: true });
+    this._polling = false;
   };
+  loop();
 };
 /* طابور الإرسال: لا يضيع أي تعديل إذا انقطع الاتصال بالخادم */
 M._outbox = () => ls.get('ml_srv_outbox', []);

@@ -47,9 +47,13 @@ let sessions = readJSON(SESSF, {});
 
 /* ---------- realtime (Server-Sent Events) ---------- */
 const clients = new Set();
+/* سجل التغييرات (للأجهزة التي تستقبل التحديثات بطريقة الاستعلام الطويل — تعمل على كل المتصفحات) */
+let seq = 0; const changes = []; const waiters = new Set();
 function broadcast(sec, msg) {
+  msg.seq = ++seq; changes.push(msg); if (changes.length > 5000) changes.splice(0, changes.length - 5000);
   const line = 'data: ' + JSON.stringify(msg) + '\n\n';
   clients.forEach(c => { if (c.role === 'admin' || c.role === sec) { try { c.res.write(line); } catch (e) {} } });
+  waiters.forEach(w => w.check());
 }
 setInterval(() => clients.forEach(c => { try { c.res.write(': ping\n\n'); } catch (e) {} }), 20000);
 
@@ -161,7 +165,19 @@ async function api(req, res, url) {
   }
   if (p === '/api/data') {
     const out = {}; SECS.forEach(s => { if (allowed(a.role, s)) out[s] = db[s]; });
-    return send(res, 200, { data: out, time: Date.now() });
+    return send(res, 200, { data: out, time: Date.now(), seq });
+  }
+  if (p === '/api/changes') {
+    const since = +url.searchParams.get('since') || 0;
+    const pick = () => changes.filter(c => c.seq > since && allowed(a.role, c.sec));
+    if (changes.length && since < changes[0].seq - 1 && since < seq) return send(res, 200, { reset: true, seq });
+    if (since > seq) return send(res, 200, { reset: true, seq });
+    const now = pick(); if (now.length) return send(res, 200, { changes: now, seq });
+    let done = false;
+    const w = { check() { const c = pick(); if (c.length && !done) { done = true; waiters.delete(w); clearTimeout(t); send(res, 200, { changes: c, seq }); } } };
+    const t = setTimeout(() => { if (!done) { done = true; waiters.delete(w); send(res, 200, { changes: [], seq }); } }, 25000);
+    waiters.add(w); req.on('close', () => { if (!done) { done = true; waiters.delete(w); clearTimeout(t); } });
+    return;
   }
   if (p === '/api/events') {
     res.writeHead(200, { 'Content-Type': 'text/event-stream; charset=utf-8', 'Cache-Control': 'no-store', Connection: 'keep-alive', 'X-Accel-Buffering': 'no' });
