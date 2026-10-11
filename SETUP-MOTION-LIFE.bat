@@ -24,6 +24,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File "%DEST%\stt-install.ps1" -De
 echo   [5/6] Firewall + auto-start...
 netsh advfirewall firewall delete rule name="Motion Life Server" >nul 2>&1
 netsh advfirewall firewall add rule name="Motion Life Server" dir=in action=allow protocol=TCP localport=8080,8443 profile=any >nul
+powershell -NoProfile -ExecutionPolicy Bypass -Command "Get-NetFirewallApplicationFilter | Where-Object { $_.Program -like '*node.exe' } | Get-NetFirewallRule | Where-Object { $_.Action -eq 'Block' } | Remove-NetFirewallRule; $n=(Get-Command node -ErrorAction SilentlyContinue).Source; if(-not $n){$n='C:\Program Files\nodejs\node.exe'}; Remove-NetFirewallRule -DisplayName 'Motion Life Node' -ErrorAction SilentlyContinue; New-NetFirewallRule -DisplayName 'Motion Life Node' -Direction Inbound -Program $n -Action Allow -Profile Any | Out-Null; Get-NetConnectionProfile | Where-Object { $_.NetworkCategory -ne 'DomainAuthenticated' } | ForEach-Object { try { Set-NetConnectionProfile -InterfaceIndex $_.InterfaceIndex -NetworkCategory Private } catch {} }"
 set "SU=%APPDATA%\Microsoft\Windows\Start Menu\Programs\Startup\MotionLife-Server.bat"
 > "%SU%" echo @echo off
 >> "%SU%" echo cd /d "%DEST%"
