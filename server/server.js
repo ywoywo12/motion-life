@@ -47,7 +47,9 @@ if (!users) { users = {}; ROLES.forEach(r => { const salt = crypto.randomBytes(8
 let sessions = readJSON(SESSF, {});
 const roleOf = u => (users[u] && users[u].role) || u;
 /* صلاحيات حساب المعالج (تعدّلها الإدارة) */
-const DEF_PERMS = { appts: true, patients: true, finance: true, library: true, devices: true, stats: false, phone: false, pay: false, allAppts: false, delFiles: false, bothSecs: false };
+const DEF_PERMS = { appts: true, patients: true, finance: true, library: true, devices: true, stats: false, phone: false, pay: false, allAppts: false, delFiles: false, bothSecs: false, editAll: true, editOwn: true, createFiles: true };
+/* هل المريض مرتبط بالمعالج (موعد باسمه أو جلسة مسجلة باسمه)؟ */
+const linkedSrv = (sec, pid, a) => Object.values(db[sec].appts).some(x => x.patientId === pid && (x.tid === a.tid || (!x.tid && x.by === a.name))) || ((db[sec].patients[pid] || {}).sessions || []).some(r => r && r.by === a.name);
 const permsOf = v => Object.assign({}, DEF_PERMS, (v && v.perms) || {});
 const newPw = () => String(100000 + crypto.randomInt(900000));
 /* حسابات المعالجين والمعالجات (تُنشأ مرة واحدة بكلمات مرور عشوائية تُحفظ في data/therapist-accounts.txt) */
@@ -266,6 +268,10 @@ async function api(req, res, url) {
       const { doc, keys } = await body(req);
       if (!doc || typeof doc !== 'object') return send(res, 400, { error: 'doc' });
       delete doc.id;
+      if (coll === 'patients' && th) {
+        if (!ex && !P.createFiles) return send(res, 403, { error: 'no_create' });
+        if (ex && !(P.editAll || (P.editOwn && linkedSrv(sec, id, a)))) return send(res, 403, { error: 'no_edit' });
+      }
       if (coll === 'appts') {
         if (limAppt && ((ex && ex.tid !== a.tid) || doc.tid !== a.tid)) return send(res, 403, { error: 'not_yours' });
         doc.createdBy = ex ? (ex.createdBy || '') : a.user;

@@ -22,7 +22,7 @@ const TH = () => !!(DB.isTherapist && DB.isTherapist());
 const myTid = () => (DB.me && DB.me.tid) || '';
 const myName = () => (DB.me && DB.me.name) || '';
 const secOf = () => TH() ? DB.me.section : DB.role;
-const DEF_PERMS = { appts: true, patients: true, finance: true, library: true, devices: true, stats: false, phone: false, pay: false, allAppts: false, delFiles: false, bothSecs: false };
+const DEF_PERMS = { appts: true, patients: true, finance: true, library: true, devices: true, stats: false, phone: false, pay: false, allAppts: false, delFiles: false, bothSecs: false, editAll: true, editOwn: true, createFiles: true };
 const can = k => !TH() || !!((DB.me && DB.me.perms) || DEF_PERMS)[k];
 const hidePhone = () => TH() && !can('phone');
 const lockPay = () => TH() && !can('pay');
@@ -31,7 +31,10 @@ const multiSec = () => DB.sections().length > 1;
 const canStats = () => DB.role === 'admin' || (TH() && can('stats'));
 const pageOK = k => !TH() || ['home', 'settings', 'p', 'setup', ''].includes(k) || (k === 'stats' ? can('stats') : can(k));
 const PERM_LIST = [['appts', 'المواعيد'], ['patients', 'ملفات المرضى'], ['finance', 'المتابعة المالية'], ['stats', 'إحصائيات المعالجين'], ['library', 'مكتبة التمارين'], ['devices', 'الأجهزة والبروتوكولات'],
-  ['phone', 'رؤية أرقام هواتف المرضى'], ['pay', 'تعديل الدفعات (ورؤية كل الملفات في المتابعة المالية)'], ['allAppts', 'إدارة مواعيد كل المعالجين (حجز/تعديل/حذف)'], ['delFiles', 'حذف ملفات المرضى'], ['bothSecs', 'الوصول للقسمين (النساء والرجال)']];
+  ['phone', 'رؤية أرقام هواتف المرضى'], ['pay', 'تعديل الدفعات (ورؤية كل الملفات في المتابعة المالية)'], ['allAppts', 'إدارة مواعيد كل المعالجين (حجز/تعديل/حذف)'], ['delFiles', 'حذف ملفات المرضى'], ['bothSecs', 'الوصول للقسمين (النساء والرجال)'],
+  ['editAll', 'تعديل ملفات كل المرضى'], ['editOwn', 'تعديل ملفات مرضاه فقط (المرتبطين به بموعد أو جلسة)'], ['createFiles', 'إضافة ملف طبي جديد']];
+/* هل يستطيع الحساب تعديل ملف هذا المريض؟ */
+const canEditP = p => !TH() || can('editAll') || (can('editOwn') && !!p && linkedTo(p, myTid(), myName()));
 /* الحالة المالية لكل ملف */
 function payState(p) {
   const total = totalOf(p), paid = paidOf(p);
@@ -126,16 +129,16 @@ function render() {
   closeModal();
   current = h[0] || 'home';
   if (!pageOK(h[0]) || (h[0] === 'p' && !can('patients'))) { app.innerHTML = shell('', `<div class="empty" style="padding:30px">🔒 لا تملك صلاحية الوصول لهذا القسم. تواصل مع الإدارة.</div>`); $$('[data-go]').forEach(b => b.addEventListener('click', () => go(b.dataset.go))); return; }
-  if (h[0] === 'p' && getP(h[1])) { app.innerHTML = shell('patients', patientView(getP(h[1]), h[2] || '1')); bindPatient(getP(h[1]), h[2] || '1'); }
+  if (h[0] === 'p' && getP(h[1])) { const P = getP(h[1]); app.innerHTML = shell('patients', patientView(P, h[2] || '1')); bindPatient(P, h[2] || '1'); if (!canEditP(P)) makeReadOnly(); }
   else if (h[0] === 'p') { app.innerHTML = shell('patients', `<div class="empty">جارٍ تحميل الملف... إذا لم يظهر فقد يكون محذوفاً أو من قسم آخر.</div>`); }
   else if (h[0] === 'appts') { app.innerHTML = shell('appts', apptsView(h[1], h[2])); bindAppts(h[1], h[2]); }
-  else if (h[0] === 'patients') { app.innerHTML = shell('patients', patientsView()); bindPatients(); }
+  else if (h[0] === 'patients') { app.innerHTML = shell('patients', patientsView()); bindPatients(); if (TH() && !can('createFiles') && $('#newP')) $('#newP').remove(); }
   else if (h[0] === 'finance') { app.innerHTML = shell('finance', financeView()); bindFinance(); }
   else if (h[0] === 'stats' && canStats()) { app.innerHTML = shell('stats', statsView(h[1])); bindStats(h[1]); }
   else if (h[0] === 'library') { app.innerHTML = shell('library', libraryView()); bindLibrary(); }
   else if (h[0] === 'devices') { app.innerHTML = shell('devices', devicesView()); bindDevices(); }
   else if (h[0] === 'settings') { app.innerHTML = shell('settings', settingsView()); bindSettings(); }
-  else { app.innerHTML = shell('home', homeView()); $$('.tile[data-go]').forEach(t => { if (!pageOK(t.dataset.go)) t.remove(); }); if (TH() && !can('patients') && $('#newP')) $('#newP').remove(); }
+  else { app.innerHTML = shell('home', homeView()); $$('.tile[data-go]').forEach(t => { if (!pageOK(t.dataset.go)) t.remove(); }); if (TH() && (!can('patients') || !can('createFiles')) && $('#newP')) $('#newP').remove(); }
   $$('[data-go]').forEach(b => b.addEventListener('click', () => go(b.dataset.go)));
   window.scrollTo(0, 0);
 }
@@ -187,7 +190,7 @@ function homeView() {
   ${recent.length ? `<h3 style="color:var(--navy);margin:26px 0 6px">آخر الملفات</h3><div class="plist">${recent.map(pCard).join('')}</div>` : ''}`;
 }
 document.addEventListener('click', e => {
-  if (e.target.closest('#newP')) createPatient();
+  if (e.target.closest('#newP')) { if (TH() && !can('createFiles')) return toast('🔒 لا تملك صلاحية إضافة ملف جديد'); createPatient(); }
   const pc = e.target.closest('.pcard'); if (pc) go('p/' + pc.dataset.id + '/1');
 });
 function pCard(p) {
@@ -522,6 +525,15 @@ function bindPatient(p, tab) {
     codes.forEach(c => { if (!p.exercises.some(x => x.code === c)) p.exercises.push({ code: c, dosage: EXM[c].dosage, note: '' }); }); redraw(); toast('تمت إضافة ' + codes.length + ' تمرين'); }));
 }
 
+/* ملف للعرض فقط (حسب صلاحيات المعالج) */
+function makeReadOnly() {
+  const sh = $$('#app .sheet'); if (!sh.length) return;
+  sh[0].insertAdjacentHTML('beforebegin', '<div class="alert amber">🔒 هذا الملف للعرض فقط — لا تملك صلاحية تعديله. تواصل مع الإدارة.</div>');
+  $$('#app .sheet input, #app .sheet textarea, #app .sheet select, #app .sheet button, #app .pain button, #app .mic').forEach(el => { el.disabled = true; });
+  $$('#addDev, #addEx, [data-rdev], [data-edev], [data-rex], #addSessPay').forEach(el => el.remove());
+  livePatient && (livePatient.apply = (orig => function () { orig.call(this); makeReadOnlyInputs(); })(livePatient.apply));
+}
+function makeReadOnlyInputs() { $$('#app .sheet input, #app .sheet textarea, #app .sheet select').forEach(el => { el.disabled = true; }); }
 /* ---------- voice to text (التسجيل الصوتي وتحويله لكتابة) ----------
    على خادم المركز: التحويل يتم على لابتوب المركز بدون إنترنت (whisper).
    على النسخة الأونلاين: خدمة المتصفح (تحتاج إنترنت). */
@@ -862,7 +874,7 @@ function apptModal(a) {
   $('#asn').value = a.sessionNo || (isNew && pid ? nextSessionNo(pid) : a.sessionNo || '');
   const linkUI = () => { const p = pid && getP(pid); const nm = $('#an').value.trim();
     $('#linkp').innerHTML = p ? `<div class="linked">✅ مرتبط بملف <b>${esc(p.name)}</b> — رقم الملف ${esc(p.fileNo)} <button class="btn light sm" id="openf">📁 فتح الملف</button> <button class="btn ghost sm" id="unl">تغيير</button></div>`
-      : nm ? `<div class="newp">🆕 مريض جديد — سيُنشأ له ملف تلقائياً باسم «${esc(nm)}» عند الحفظ</div>` : '';
+      : nm ? (TH() && !can('createFiles') ? `<div class="newp">🔒 اختر المريض من القائمة — لا تملك صلاحية إضافة ملف جديد</div>` : `<div class="newp">🆕 مريض جديد — سيُنشأ له ملف تلقائياً باسم «${esc(nm)}» عند الحفظ</div>`) : '';
     $('#histBox').innerHTML = p ? `<div class="lbl" style="margin:12px 0 4px">📋 سجل المواعيد السابقة لهذا المريض</div>${histHTML(patientAppts(pid, a.id), sec)}` : '';
     if ($('#openf')) $('#openf').onclick = () => { if (save(true)) go('p/' + pid + '/2'); };
     if ($('#unl')) $('#unl').onclick = () => { pid = ''; $('#an').value = ''; $('#an').focus(); linkUI(); };
@@ -874,7 +886,7 @@ function apptModal(a) {
     const m = q ? pts.filter(p => norm(p.name).split(/\s+/).some(w => w.startsWith(q)) || norm(p.name).startsWith(q) || (p.phone || '').includes(q)).slice(0, 8) : [];
     const last = id => { const l = patientAppts(id)[0]; return l ? 'آخر موعد ' + l.date : 'لا مواعيد سابقة'; };
     $('#sg').innerHTML = q ? m.map(p => `<button type="button" data-pid="${p.id}"><b>${esc(p.name)}</b> <small>ملف ${esc(p.fileNo)}${hidePhone() ? '' : ' · ' + esc(p.phone || '—')} · ${last(p.id)}</small></button>`).join('') +
-      `<button type="button" class="sg-new" id="sgNew">➕ إضافة مريض جديد باسم «${esc($('#an').value.trim())}»</button>` : '';
+      (TH() && !can('createFiles') ? '' : `<button type="button" class="sg-new" id="sgNew">➕ إضافة مريض جديد باسم «${esc($('#an').value.trim())}»</button>`) : '';
     $('#sg').classList.toggle('hidden', !q);
     $$('[data-pid]', $('#sg')).forEach(b => b.onclick = () => pick(getP(b.dataset.pid)));
     $('#sgNew') && ($('#sgNew').onclick = () => { $('#sg').classList.add('hidden'); $('#asn').value = 1; $('#ap').focus(); });
@@ -883,6 +895,7 @@ function apptModal(a) {
   $$('[data-st]').forEach(b => b.onclick = () => { st = b.dataset.st; $$('[data-st]').forEach(x => x.classList.toggle('on', x === b)); });
   function save(silent) {
     const name = $('#an').value.trim(); if (!name) { if (!silent) toast('اكتب اسم المريض'); return false; }
+    if (!pid && TH() && !can('createFiles')) { if (!silent) toast('🔒 اختر المريض من الملفات الموجودة'); return false; }
     if (!pid) { const np = newPatient(sec, { name, phone: $('#ap').value.trim() }); DB.savePatient(np); pid = np.id; }
     const th = therapists(sec).find(t => t.id === tid);
     const o = Object.assign({}, a, { id: a.id || uid('a'), created: a.created || new Date().toISOString(), date: $('#ad').value || a.date, time: $('#at').value,
@@ -898,7 +911,7 @@ function apptModal(a) {
 }
 /* عند تأكيد الحضور: تعبئة سطر الجلسة في ملف المريض تلقائياً */
 function syncSessionRow(o) {
-  const p = getP(o.patientId); const n = +o.sessionNo; if (!p || !n || o.status !== 'done') return;
+  const p = getP(o.patientId); const n = +o.sessionNo; if (!p || !n || o.status !== 'done' || !canEditP(p)) return;
   while (p.sessions.length < n) p.sessions.push({ date: '', note: '', by: '' });
   const r = p.sessions[n - 1];
   r.date = o.date; if (o.by) r.by = o.by; if (o.amount) r.amount = o.amount; if (!r.note && o.note) r.note = o.note;
@@ -1001,7 +1014,7 @@ function settingsView() {
   <div class="sheet"><button class="btn ghost" id="out">🚪 تسجيل الخروج</button></div>`;
 }
 let accCache = null;
-const permLevel = p => !p ? '' : PERM_LIST.every(([k]) => p[k]) ? 'full' : (p.phone || p.pay || p.allAppts || p.delFiles || p.bothSecs || p.stats) ? 'extra' : 'basic';
+const permLevel = p => !p ? '' : PERM_LIST.every(([k]) => p[k]) ? 'full' : PERM_LIST.every(([k]) => !!p[k] === !!DEF_PERMS[k]) ? 'basic' : 'extra';
 const permLabel = p => ({ full: 'كاملة', extra: 'مخصصة', basic: 'أساسية' })[permLevel(p)] || 'أساسية';
 function permsModal(u) {
   if (!u) return;
@@ -1011,13 +1024,16 @@ function permsModal(u) {
       <div class="row" style="margin-bottom:10px"><button class="btn" id="pFull">✓ صلاحية كاملة لكل الأقسام</button><button class="btn light" id="pBasic">↺ الصلاحيات الأساسية للمعالج</button></div>
       <div class="lbl-s">الأقسام التي تظهر له:</div>
       <div class="permgrid">${PERM_LIST.slice(0, 6).map(([k, t]) => `<label class="chk perm"><input type="checkbox" data-pk="${k}" ${p[k] ? 'checked' : ''}>${t}</label>`).join('')}</div>
+      <div class="lbl-s" style="margin-top:10px">ملفات المرضى:</div>
+      <div class="permgrid">${PERM_LIST.slice(11).map(([k, t]) => `<label class="chk perm"><input type="checkbox" data-pk="${k}" ${p[k] ? 'checked' : ''}>${t}</label>`).join('')}</div>
+      <p class="hint" style="margin:4px 0 0">لمنع المعالج من تعديل أي ملف: أزل «تعديل ملفات كل المرضى» و«تعديل ملفات مرضاه فقط». يبقى قادراً على مشاهدة الملفات.</p>
       <div class="lbl-s" style="margin-top:10px">صلاحيات إضافية:</div>
-      <div class="permgrid">${PERM_LIST.slice(6).map(([k, t]) => `<label class="chk perm"><input type="checkbox" data-pk="${k}" ${p[k] ? 'checked' : ''}>${t}</label>`).join('')}</div>
+      <div class="permgrid">${PERM_LIST.slice(6, 11).map(([k, t]) => `<label class="chk perm"><input type="checkbox" data-pk="${k}" ${p[k] ? 'checked' : ''}>${t}</label>`).join('')}</div>
       <p class="hint">بدون «إدارة مواعيد كل المعالجين»: يحجز ويعدّل مواعيده فقط ولا يحذف إلا ما أضافه بنفسه. تُطبَّق الصلاحيات فوراً على الخادم، وتظهر عنده عند تحديث الصفحة.</p>
       <div class="modal-f"><button class="btn big" id="ok">حفظ الصلاحيات</button><button class="btn ghost" id="cn">إلغاء</button></div>`);
     $$('[data-pk]').forEach(c => c.onchange = () => { p[c.dataset.pk] = c.checked; });
     $('#pFull').onclick = () => { PERM_LIST.forEach(([k]) => p[k] = true); draw(); };
-    $('#pBasic').onclick = () => { Object.assign(p, { appts: true, patients: true, finance: true, library: true, devices: true, stats: false, phone: false, pay: false, allAppts: false, delFiles: false, bothSecs: false }); draw(); };
+    $('#pBasic').onclick = () => { Object.assign(p, DEF_PERMS); draw(); };
     $('#mc').onclick = $('#cn').onclick = closeModal;
     $('#ok').onclick = async () => { const r = await DB.userAction({ action: 'perms', user: u.user, perms: p }); if (r.ok) { closeModal(); toast('تم حفظ صلاحيات ' + u.name); bindTherapists(); } else toast('تعذّر الحفظ'); };
   };
