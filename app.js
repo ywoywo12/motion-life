@@ -9,6 +9,7 @@ const REG = Object.fromEntries(D.regions.map(r => [r.code, r.ar]));
 const TYP = Object.fromEntries(D.types.map(t => [t.code, t.ar]));
 const EXM = Object.fromEntries(D.exercises.map(e => [e.code, e]));
 const DEVM = Object.fromEntries(D.devices.map(d => [d.code, d]));
+const PRG = Object.fromEntries(D.programs.map(p => [p.code, p]));
 const today = () => new Date().toISOString().slice(0, 10);
 
 /* ---------- data (via db.js: cloud sync or local) ---------- */
@@ -172,7 +173,8 @@ const ta = (k, rows, v) => `<textarea class="lined" data-k="${k}" rows="${rows}"
 const PAIN_C = ['#2e9e5b','#4caf50','#7cb342','#c0ca33','#fdd835','#fbc02d','#ffa000','#f57c00','#ef6c00','#e64a19','#c62828'];
 
 function patientView(p, tab) {
-  const tabs = `<div class="ptabs">
+  const tabs = `<div class="pid-bar"><span class="pid-name">👤 <b data-live="name">${esc(p.name || 'مريض جديد')}</b></span><span>رقم الملف: <b data-live="fileNo">${esc(p.fileNo)}</b></span>${DB.role === 'admin' ? `<span class="badge sec-${p.section}">${SEC[p.section]}</span>` : ''}</div>
+  <div class="ptabs">
     <button class="tab ${tab === '1' ? 'on' : ''}" data-go="p/${p.id}/1">١- ملف المريض والتقييم</button>
     <button class="tab ${tab === '2' ? 'on' : ''}" data-go="p/${p.id}/2">٢- الخطة العلاجية والجلسات</button>
     <span class="spacer"></span><span class="saved" id="sv"></span>
@@ -198,7 +200,7 @@ function page1(p) {
     <div class="fcol"><span class="lbl">الأمراض المزمنة / الأدوية / العمليات السابقة</span>${ta('chronic', 2, p.chronic)}</div></div>
     <div class="fcol" style="margin-top:10px"><span class="lbl lbl-mic">القصة المرضية ${micBtn('history')}</span>${ta('history', 4, p.history)}</div>
   </div></div>
-  <div class="box"><div class="box-t">التقييم السريري</div><div class="box-b">${ta('clinical', 6, p.clinical)}</div></div>
+  <div class="box"><div class="box-t lbl-mic">التقييم السريري ${micBtn('clinical')}</div><div class="box-b">${ta('clinical', 6, p.clinical)}</div></div>
   <div class="box"><div class="box-t">الأعراض الحالية ومقياس الألم</div><div class="box-b grid2">
     <div class="fcol"><span class="lbl lbl-mic">الأعراض الحالية ${micBtn('symptoms')}</span>${ta('symptoms', 3, p.symptoms)}</div>
     <div class="fcol"><div class="f" style="align-items:center"><label>شدة الألم:</label>
@@ -215,18 +217,23 @@ function page1(p) {
   <div class="row"><span class="spacer"></span><button class="btn big" data-go="p/${p.id}/2">التالي: الخطة العلاجية ←</button></div>`;
 }
 
+const paidOf = p => p.payments.reduce((a, x) => a + num(x.amount), 0) + (p.payMode === 'session' ? p.sessions.reduce((a, x) => a + num(x.amount), 0) : 0);
+const totalOf = p => num(p.agreedTotal) || (p.payMode === 'session' ? num(p.sessionPrice) * num(p.agreedSessions) : 0);
+const remainOf = p => totalOf(p) ? fmt(totalOf(p) - paidOf(p)) : '';
 function page2(p) {
-  const half = (from, to) => `<table class="sess"><thead><tr><th>الجلسة</th><th>التاريخ</th><th>الملاحظات / الاستجابة</th><th>المعالج</th></tr></thead><tbody>
+  const ps = p.payMode === 'session';
+  const half = (from, to) => `<table class="sess"><thead><tr><th>الجلسة</th><th>التاريخ</th><th>الملاحظات / الاستجابة</th><th>المعالج</th>${ps ? '<th>المبلغ</th>' : ''}</tr></thead><tbody>
     ${p.sessions.slice(from, to).map((s, j) => { const i = from + j; return `<tr><td class="n">${i + 1}</td>
       <td><input type="date" data-s="${i}" data-f="date" value="${esc(s.date)}"></td>
       <td><input data-s="${i}" data-f="note" value="${esc(s.note)}"></td>
-      <td><input data-s="${i}" data-f="by" value="${esc(s.by)}" style="width:90px"></td></tr>`; }).join('')}</tbody></table>`;
-  const paid = p.payments.reduce((a, x) => a + num(x.amount), 0);
+      <td><input data-s="${i}" data-f="by" value="${esc(s.by)}" style="width:90px"></td>${ps ? `<td><input data-s="${i}" data-f="amount" value="${esc(s.amount || '')}" inputmode="numeric" style="width:70px"></td>` : ''}</tr>`; }).join('')}</tbody></table>`;
+  const paid = paidOf(p);
+  const hist = patientAppts(p.id);
   return `<div class="sheet">${head('الخطة العلاجية ومتابعة الجلسات', 'حتى 22 جلسة')}
   <div class="grid3" style="margin-bottom:16px">
     ${inp('startDate', 'تاريخ بدء العلاج', 'date', p.startDate)}
-    <div class="f"><label>رقم الملف:</label><input value="${esc(p.fileNo)}" readonly tabindex="-1"></div>
-    <div class="f"><label>اسم المريض:</label><input value="${esc(p.name)}" readonly tabindex="-1"></div>
+    <div class="f"><label>رقم الملف:</label><div class="auto" data-live="fileNo">${esc(p.fileNo)}</div></div>
+    <div class="f"><label>اسم المريض:</label><div class="auto" data-live="name">${esc(p.name)}</div></div>
   </div>
   <div class="box"><div class="box-t lbl-mic">الخطة العلاجية ${micBtn('plan')}</div><div class="box-b">
     ${ta('plan', 4, p.plan)}
@@ -236,17 +243,22 @@ function page2(p) {
       <div id="exList">${exListHTML(p)}</div></div>
   </div></div>
   <div class="sess-wrap">${half(0, 11)}${half(11, 22)}</div>
+  <details class="hist-box" ${hist.length ? '' : ''}><summary>📋 سجل المواعيد (${hist.length}) — يُعبّأ سطر الجلسة تلقائياً عند تأكيد الحضور من المواعيد</summary>${histHTML(hist, p.section)}</details>
   <div class="grid2" style="margin-bottom:14px">
     <div class="fcol"><span class="lbl">التقييم بعد الجلسة السادسة:</span>${ta('eval6', 2, p.eval6)}</div>
     <div class="fcol"><span class="lbl">التقييم بعد الجلسة الثانية عشرة:</span>${ta('eval12', 2, p.eval12)}</div>
   </div>
+  <div class="paymode"><span class="lbl">طريقة الدفع:</span>
+    <label class="chk"><input type="radio" name="pm" data-k="payMode" value="" ${ps ? '' : 'checked'}>دفعات</label>
+    <label class="chk"><input type="radio" name="pm" data-k="payMode" value="session" ${ps ? 'checked' : ''}>مبلغ مقابل كل جلسة</label>
+    ${ps ? `<div class="f" style="flex:1;min-width:200px"><label>سعر الجلسة:</label><input data-k="sessionPrice" value="${esc(p.sessionPrice || '')}" inputmode="numeric"></div>` : ''}</div>
   <div class="pay">
     <div class="paybox">${inp('agreedSessions', 'عدد الجلسات المتفق عليها', 'text', p.agreedSessions)}</div>
     <div class="paybox">${inp('agreedTotal', 'المبلغ الإجمالي المتفق عليه', 'text', p.agreedTotal)}</div>
     ${p.payments.map((x, i) => `<div class="paybox soft"><div class="row" style="flex-wrap:nowrap"><b style="white-space:nowrap">الدفعة ${i + 1}:</b>
       <div class="f" style="flex:1"><label>المبلغ</label><input data-pay="${i}" data-f="amount" value="${esc(x.amount)}" inputmode="numeric"></div>
       <div class="f" style="flex:1"><label>التاريخ</label><input type="date" data-pay="${i}" data-f="date" value="${esc(x.date)}"></div></div></div>`).join('')}
-    <div class="paybox"><div class="f"><label>المبلغ المتبقي:</label><input id="remain" readonly value="${p.agreedTotal ? fmt(num(p.agreedTotal) - paid) : ''}"></div></div>
+    <div class="paybox"><div class="f"><label>المبلغ المتبقي:</label><input id="remain" readonly value="${remainOf(p)}"></div></div>
     <div class="paybox"><div class="f"><label>إجمالي المبلغ المدفوع:</label><input id="paid" readonly value="${paid ? fmt(paid) : ''}"></div></div>
   </div></div>`;
 }
@@ -280,13 +292,16 @@ function bindPatient(p, tab) {
       DB.savePatient(p, ks).then(() => { if ($('#sv')) $('#sv').textContent = '✓ تم الحفظ'; }).catch(() => { if ($('#sv')) $('#sv').textContent = '⚠️ لم يُحفظ — تحقق من الاتصال'; });
       if (DB.mode === 'cloud' && $('#sv')) $('#sv').textContent = DB.online ? '✓ تم الحفظ والمزامنة' : '✓ محفوظ — سيُزامن عند عودة الإنترنت';
     }, 400); };
-  $$('[data-k]').forEach(el => el.addEventListener(el.type === 'radio' ? 'change' : 'input', () => { p[el.dataset.k] = el.value; touch(el.dataset.k); if (el.dataset.k === 'agreedTotal') calc(); }));
+  $$('[data-k]').forEach(el => el.addEventListener(el.type === 'radio' ? 'change' : 'input', () => { p[el.dataset.k] = el.value; touch(el.dataset.k);
+    if (['agreedTotal', 'agreedSessions', 'sessionPrice'].includes(el.dataset.k)) calc();
+    if (el.dataset.k === 'name' || el.dataset.k === 'fileNo') $$(`[data-live="${el.dataset.k}"]`).forEach(x => x.textContent = el.value || (el.dataset.k === 'name' ? 'مريض جديد' : ''));
+    if (el.dataset.k === 'payMode') { clearTimeout(t); const ks = [...dirty]; dirty.clear(); DB.savePatient(p, ks); render(); } }));
   $$('[data-pt]').forEach(el => el.addEventListener('change', () => { const v = el.dataset.pt; p.painType = p.painType.filter(x => x !== v); if (el.checked) p.painType.push(v); touch('painType'); }));
   const pain = $('#pain');
   const drawPain = () => $$('button', pain).forEach(x => { const on = +x.dataset.v === p.pain; x.classList.toggle('on', on); x.style.background = on ? PAIN_C[p.pain] : ''; });
   if (pain) pain.addEventListener('click', e => { const b = e.target.closest('button'); if (!b) return; const v = +b.dataset.v; p.pain = p.pain === v ? null : v; drawPain(); touch('pain'); });
-  $$('[data-s]').forEach(el => el.addEventListener('input', () => { p.sessions[+el.dataset.s][el.dataset.f] = el.value; touch('sessions'); }));
-  const calc = () => { const paid = p.payments.reduce((a, x) => a + num(x.amount), 0); if ($('#paid')) { $('#paid').value = paid ? fmt(paid) : ''; $('#remain').value = p.agreedTotal ? fmt(num(p.agreedTotal) - paid) : ''; } };
+  $$('[data-s]').forEach(el => el.addEventListener('input', () => { p.sessions[+el.dataset.s][el.dataset.f] = el.value; touch('sessions'); if (el.dataset.f === 'amount') calc(); }));
+  const calc = () => { const paid = paidOf(p); if ($('#paid')) { $('#paid').value = paid ? fmt(paid) : ''; $('#remain').value = remainOf(p); } };
   $$('[data-pay]').forEach(el => el.addEventListener('input', () => { p.payments[+el.dataset.pay][el.dataset.f] = el.value; touch('payments'); calc(); }));
   bindMics();
   $('#prt').addEventListener('click', () => printPatient(p, false));
@@ -305,6 +320,7 @@ function bindPatient(p, tab) {
     $$('[data-s]').forEach(el => { if (el !== document.activeElement) el.value = p.sessions[+el.dataset.s][el.dataset.f] || ''; });
     $$('[data-pay]').forEach(el => { if (el !== document.activeElement) el.value = p.payments[+el.dataset.pay][el.dataset.f] || ''; });
     calc();
+    $$('[data-live]').forEach(x => { x.textContent = p[x.dataset.live] || ''; });
     const nl = JSON.stringify([p.devices, p.exercises]);
     if (tab === '2' && nl !== lastLists && $('#modal').classList.contains('hidden')) { lastLists = nl; redrawLists(); }
     $('#sv').textContent = '↻ تم التحديث من جهاز آخر';
@@ -399,18 +415,22 @@ function deviceParamsStep(dev, program, values, existing, done) {
 function libFilters(prefix) {
   return `<input class="search" id="${prefix}q" placeholder="🔍 ابحث عن تمرين">
   <div class="lbl-s">١- منطقة الجسم</div><div class="chips" id="${prefix}r"><button class="chip on" data-v="">الكل</button>${D.regions.map(r => `<button class="chip" data-v="${r.code}">${r.ar}</button>`).join('')}</div>
-  <div class="lbl-s">٢- نوع التمرين (الهدف)</div><div class="chips" id="${prefix}t"><button class="chip on" data-v="">الكل</button>${D.types.map(t => `<button class="chip" data-v="${t.code}">${t.ar}</button>`).join('')}</div>`;
+  <div class="lbl-s">٢- نوع التمرين (الهدف)</div><div class="chips" id="${prefix}t"><button class="chip on" data-v="">الكل</button>${D.types.map(t => `<button class="chip" data-v="${t.code}">${t.ar}</button>`).join('')}</div>
+  <div class="lbl-s">٣- البرامج التخصصية</div><div class="chips prg" id="${prefix}p"><button class="chip on" data-v="">الكل</button>${D.programs.map(p => `<button class="chip" data-v="${p.code}">${p.ar}</button>`).join('')}</div>
+  <div id="${prefix}pinfo"></div>`;
 }
 function useFilters(prefix, onChange) {
-  const st = { r: '', t: '', q: '' };
-  ['r', 't'].forEach(k => $('#' + prefix + k).addEventListener('click', e => { const b = e.target.closest('.chip'); if (!b) return; st[k] = b.dataset.v;
-    $$('.chip', $('#' + prefix + k)).forEach(c => c.classList.toggle('on', c === b)); onChange(st); }));
+  const st = { r: '', t: '', p: '', q: '' };
+  ['r', 't', 'p'].forEach(k => $('#' + prefix + k).addEventListener('click', e => { const b = e.target.closest('.chip'); if (!b) return; st[k] = b.dataset.v;
+    $$('.chip', $('#' + prefix + k)).forEach(c => c.classList.toggle('on', c === b));
+    if (k === 'p') { const P = PRG[st.p]; $('#' + prefix + 'pinfo').innerHTML = P ? `<div class="help prg-info"><b>${esc(P.ar)}:</b> ${esc(P.about)}${prefix === 'm' ? ' <button class="btn sm" id="selAllP">✓ اختيار كل تمارين البرنامج</button>' : ''}</div>` : ''; }
+    onChange(st); }));
   $('#' + prefix + 'q').addEventListener('input', e => { st.q = e.target.value.trim(); onChange(st); });
   return st;
 }
-const filterEx = st => D.exercises.filter(e => (!st.r || e.region === st.r) && (!st.t || e.type === st.t) && (!st.q || (e.name_ar + ' ' + e.name_en + ' ' + e.steps).toLowerCase().includes(st.q.toLowerCase())));
+const filterEx = st => D.exercises.filter(e => (!st.r || e.region === st.r) && (!st.t || e.type === st.t) && (!st.p || e.programs.includes(st.p)) && (!st.q || (e.name_ar + ' ' + e.name_en + ' ' + e.steps).toLowerCase().includes(st.q.toLowerCase())));
 const exCard = (e, sel) => `<div class="card ${sel ? 'sel' : ''}" data-ex="${e.code}"><img src="${fig(e.code)}" alt="" loading="lazy">
-  <div class="t">${esc(e.name_ar)}</div><div><span class="badge">${esc(REG[e.region])}</span> <span class="badge o">${esc(TYP[e.type])}</span></div><div class="d">${esc(e.dosage)}</div></div>`;
+  <div class="t">${esc(e.name_ar)}</div><div><span class="badge">${esc(REG[e.region])}</span> <span class="badge o">${esc(TYP[e.type])}</span>${e.programs.map(p => ` <span class="badge p">${esc(PRG[p].ar.split(' (')[0].split(' —')[0])}</span>`).join('')}</div><div class="d">${esc(e.dosage)}</div></div>`;
 
 function exercisePicker(already, done) {
   const sel = new Set();
@@ -420,8 +440,9 @@ function exercisePicker(already, done) {
     <span class="spacer"></span><small style="color:var(--muted)">اضغط على التمرين لاختياره، واضغط مرة ثانية لإلغائه</small></div>`);
   const draw = st => { const L = filterEx(st); $('#ml').innerHTML = L.length ? L.map(e => exCard(e, sel.has(e.code)).replace('</div></div>', (already.includes(e.code) ? '<span class="badge" style="background:#e7f6ee;color:var(--ok)">موجود في الخطة</span>' : '') + '</div></div>')).join('') : '<div class="empty">لا توجد تمارين بهذه المواصفات.</div>'; };
   const st = useFilters('m', draw); draw(st);
-  $('#ml').addEventListener('click', e => { const c = e.target.closest('.card'); if (!c) return; const k = c.dataset.ex; sel.has(k) ? sel.delete(k) : sel.add(k); c.classList.toggle('sel');
-    $('#ok').textContent = `إضافة التمارين المختارة (${sel.size})`; $('#ok').disabled = !sel.size; });
+  const upd = () => { $('#ok').textContent = `إضافة التمارين المختارة (${sel.size})`; $('#ok').disabled = !sel.size; };
+  $('#ml').addEventListener('click', e => { const c = e.target.closest('.card'); if (!c) return; const k = c.dataset.ex; sel.has(k) ? sel.delete(k) : sel.add(k); c.classList.toggle('sel'); upd(); });
+  $('#mpinfo').addEventListener('click', e => { if (!e.target.closest('#selAllP')) return; filterEx(st).forEach(x => sel.add(x.code)); draw(st); upd(); });
   $('#mc').onclick = closeModal; $('#cn').onclick = closeModal;
   $('#ok').onclick = () => { done([...sel]); closeModal(); };
 }
@@ -429,7 +450,7 @@ function exInfo(code) {
   const e = EXM[code];
   openModal(`<div class="modal-h"><h3>${esc(e.name_ar)}</h3><span class="spacer"></span><button class="x" id="mc">×</button></div>
     <div class="exd"><img src="${fig(code)}" alt=""><div>
-      <div><span class="badge">${esc(REG[e.region])}</span> <span class="badge o">${esc(TYP[e.type])}</span> ${e.name_en ? `<small style="color:var(--muted)">${esc(e.name_en)}</small>` : ''}</div>
+      <div><span class="badge">${esc(REG[e.region])}</span> <span class="badge o">${esc(TYP[e.type])}</span>${e.programs.map(p => ` <span class="badge p">${esc(PRG[p].ar)}</span>`).join('')} ${e.name_en ? `<small style="color:var(--muted)">${esc(e.name_en)}</small>` : ''}</div>
       <h4 style="margin:12px 0 4px;color:var(--teal-d)">طريقة الأداء</h4><p style="margin:0">${esc(e.steps)}</p>
       <h4 style="margin:12px 0 4px;color:var(--teal-d)">الجرعة المقترحة</h4><p style="margin:0">${esc(e.dosage)}</p>
       <div class="warn" style="margin-top:12px">⚠️ ${esc(e.caution)}</div></div></div>`);
@@ -437,7 +458,7 @@ function exInfo(code) {
 }
 function libraryView() {
   return `<div class="row"><h2 style="margin:0;color:var(--navy)">مكتبة التمارين</h2><span class="badge" id="lc"></span></div>
-  <div class="help" style="margin-top:10px">اختر منطقة الجسم ثم نوع التمرين (تقوية، إطالة، ثبات، توازن...). اضغط على أي تمرين لرؤية طريقة الأداء. لإضافة تمارين لمريض: افتح ملفه ← الخطة العلاجية ← «إضافة تمارين».</div>
+  <div class="help" style="margin-top:10px">اختر منطقة الجسم ثم نوع التمرين (تقوية، إطالة، ثبات، توازن...) أو برنامجاً تخصصياً مثل ماكنزي ووليامز. اضغط على أي تمرين لرؤية طريقة الأداء. لإضافة تمارين لمريض: افتح ملفه ← الخطة العلاجية ← «إضافة تمارين».</div>
   ${libFilters('l')}<div class="lib" id="ll"></div>`;
 }
 function bindLibrary() {
@@ -488,16 +509,29 @@ function apptsView(sec, date) {
   </div>
   <div class="agrid" id="agrid"></div>`;
 }
+/* therapists (المعالجون) */
+const therapists = sec => (DB.meta[sec] && DB.meta[sec].therapists) || [];
+const thOf = (sec, a) => therapists(sec).find(t => t.id === a.tid) || therapists(sec).find(t => t.name === a.by) || null;
+const thColor = (sec, a) => { const t = thOf(sec, a); return t ? t.color : '#8a9aa6'; };
+const patientAppts = (pid, exceptId) => [...DB.appts.values()].filter(x => x.patientId === pid && x.id !== exceptId).sort((x, y) => (y.date + y.time).localeCompare(x.date + x.time));
+const nextSessionNo = pid => { if (!pid) return 1; const n = patientAppts(pid).filter(x => x.status !== 'cancelled' && x.status !== 'absent').map(x => +x.sessionNo || 0); return (n.length ? Math.max(...n) : 0) + 1; };
+const histHTML = (list, sec) => list.length ? `<div class="hist">${list.map(x => `<div class="hist-r st-${x.status || 'booked'}"><span class="dot" style="background:${thColor(sec, x)}"></span>
+  <b>${esc(x.date)}</b><span>${t12(x.time)}</span><span>${x.sessionNo ? 'جلسة ' + esc(x.sessionNo) : ''}</span><span>${esc((thOf(sec, x) || {}).name || x.by || '')}</span><i>${ST[x.status || 'booked']}</i>${x.amount ? `<span>💵 ${esc(x.amount)}</span>` : ''}</div>`).join('')}</div>` : '<div class="empty" style="padding:6px">لا توجد مواعيد سابقة</div>';
+
 function bindAppts(sec, date) {
   sec = DB.sections().includes(sec) ? sec : DB.sections()[0]; date = /^\d{4}-\d{2}-\d{2}$/.test(date || '') ? date : today();
   $('#dpick').onchange = e => e.target.value && go(`appts/${sec}/${e.target.value}`);
+  let tf = '';
   const draw = () => {
-    const list = [...DB.appts.values()].filter(x => x.section === sec && x.date === date);
+    const all = [...DB.appts.values()].filter(x => x.section === sec && x.date === date);
+    const list = tf ? all.filter(x => (thOf(sec, x) || {}).id === tf) : all;
     const by = {}; list.forEach(x => (by[x.time] = by[x.time] || []).push(x));
     const slots = slotsOf(sec), isToday = date === today(), now = nowHM();
-    const cnt = k => list.filter(x => (x.status || 'booked') === k).length;
-    const free = slots.filter(t => !(by[t] || []).some(x => x.status !== 'cancelled')).length;
-    $('#asum').innerHTML = `<span class="sb booked">محجوز: ${cnt('booked')}</span><span class="sb done">حضر: ${cnt('done')}</span><span class="sb absent">لم يحضر: ${cnt('absent')}</span><span class="sb cancelled">ملغى: ${cnt('cancelled')}</span><span class="sb free">مواعيد متاحة: ${free} من ${slots.length}</span>`;
+    const cnt = k => all.filter(x => (x.status || 'booked') === k).length;
+    const free = slots.filter(t => !all.some(x => x.time === t && x.status !== 'cancelled')).length;
+    $('#asum').innerHTML = `<span class="sb booked">محجوز: ${cnt('booked')}</span><span class="sb done">حضر: ${cnt('done')}</span><span class="sb absent">لم يحضر: ${cnt('absent')}</span><span class="sb cancelled">ملغى: ${cnt('cancelled')}</span><span class="sb free">مواعيد متاحة: ${free} من ${slots.length}</span>
+      <div class="legend"><span class="lg-t">المعالجون:</span><button class="lg ${tf ? '' : 'on'}" data-tf="">الكل</button>${therapists(sec).map(t => { const n = all.filter(x => (thOf(sec, x) || {}).id === t.id && x.status !== 'cancelled').length;
+        return `<button class="lg ${tf === t.id ? 'on' : ''}" data-tf="${t.id}" style="--c:${t.color}"><span class="dot" style="background:${t.color}"></span>${esc(t.name)}${n ? ` <small>${n}</small>` : ''}</button>`; }).join('')}</div>`;
     let html = '', curHour = '';
     slots.forEach((t, i) => {
       const h = t.slice(0, 2);
@@ -507,56 +541,86 @@ function bindAppts(sec, date) {
       const isNow = isToday && now >= t && now < next;
       const past = isToday && now >= next || date < today();
       html += `<div class="slot ${items.length ? 'has' : ''} ${isNow ? 'now' : ''} ${past ? 'past' : ''}"><div class="slot-t">${t12(t)}</div><div class="slot-b">
-        ${items.map(x => `<button class="ap st-${x.status || 'booked'}" data-ap="${x.id}"><b>${esc(x.name || 'بدون اسم')}</b>${x.phone ? `<span dir="ltr">${esc(x.phone)}</span>` : ''}${x.note ? `<span>· ${esc(x.note)}</span>` : ''}<i>${ST[x.status || 'booked']}</i></button>`).join('')}
+        ${items.map(x => { const th = thOf(sec, x); return `<button class="ap st-${x.status || 'booked'}" data-ap="${x.id}" style="--c:${th ? th.color : '#8a9aa6'}">
+          <b>${esc(x.name || 'بدون اسم')}</b>${x.sessionNo ? `<span class="sn">ج${esc(x.sessionNo)}</span>` : ''}${th ? `<span class="thn">${esc(th.name)}</span>` : (x.by ? `<span class="thn">${esc(x.by)}</span>` : '')}${x.note ? `<span>· ${esc(x.note)}</span>` : ''}<i>${ST[x.status || 'booked']}</i></button>`; }).join('')}
         <button class="add-ap ${items.length ? 'small' : ''}" data-add="${t}">${items.length ? '+' : '+ حجز موعد'}</button></div></div>`;
     });
     $('#agrid').innerHTML = html + '</div>';
-    $$('[data-add]').forEach(b => b.onclick = () => apptModal({ section: sec, date, time: b.dataset.add }));
+    $$('[data-tf]').forEach(b => b.onclick = () => { tf = b.dataset.tf; draw(); });
+    $$('[data-add]').forEach(b => b.onclick = () => apptModal({ section: sec, date, time: b.dataset.add, tid: tf || '' }));
     $$('[data-ap]').forEach(b => b.onclick = () => apptModal(DB.appts.get(b.dataset.ap)));
   };
   draw(); liveRedraw = draw;
   if (date === today()) { const n = $('.slot.now'); if (n) setTimeout(() => n.scrollIntoView({ block: 'center' }), 50); }
 }
+
 function apptModal(a) {
-  const isNew = !a.id; a = Object.assign({ name: '', phone: '', note: '', by: '', status: 'booked', patientId: '' }, a);
-  const pts = allP().filter(p => p.section === a.section);
-  openModal(`<div class="modal-h"><h3>${isNew ? 'حجز موعد جديد' : 'تفاصيل الموعد'} — ${SEC[a.section]}</h3><span class="spacer"></span><button class="x" id="mc">×</button></div>
+  const isNew = !a.id; a = Object.assign({ name: '', phone: '', note: '', by: '', tid: '', status: 'booked', patientId: '', sessionNo: '', amount: '' }, a);
+  const sec = a.section;
+  const pts = allP().filter(p => p.section === sec);
+  let pid = a.patientId, st = a.status, tid = (thOf(sec, a) || {}).id || a.tid || '';
+  openModal(`<div class="modal-h"><h3>${isNew ? 'حجز موعد جديد' : 'تفاصيل الموعد'} — ${SEC[sec]}</h3><span class="spacer"></span><button class="x" id="mc">×</button></div>
     <div class="pform">
-      <div class="fcol"><span class="lbl">التاريخ</span><input type="date" id="ad" value="${a.date}"></div>
-      <div class="fcol"><span class="lbl">الوقت</span><select id="at" class="sel">${slotsOf(a.section).map(t => `<option value="${t}" ${t === a.time ? 'selected' : ''}>${t12(t)}</option>`).join('')}</select></div>
-      <div class="fcol" style="grid-column:1/-1;position:relative"><span class="lbl">اسم المريض <small style="color:var(--muted);font-weight:400">(اكتب للبحث في الملفات)</small></span><input id="an" value="${esc(a.name)}" autocomplete="off"><div class="sugg hidden" id="sg"></div></div>
+      <div class="fcol" style="grid-column:1/-1;position:relative"><span class="lbl">اسم المريض <small class="hint">اكتب أول الاسم وستظهر ملفات المرضى للاختيار</small></span>
+        <input id="an" value="${esc(a.name)}" autocomplete="off" placeholder="مثال: أحمد"><div class="sugg hidden" id="sg"></div></div>
+      <div class="fcol" style="grid-column:1/-1" id="linkp"></div>
       <div class="fcol"><span class="lbl">رقم الهاتف</span><input id="ap" value="${esc(a.phone)}" dir="ltr" inputmode="tel"></div>
-      <div class="fcol"><span class="lbl">المعالج</span><input id="ab" value="${esc(a.by)}"></div>
-      <div class="fcol" style="grid-column:1/-1"><span class="lbl">ملاحظة (نوع الجلسة، جلسة رقم...)</span><input id="ano" value="${esc(a.note)}"></div>
+      <div class="fcol"><span class="lbl">رقم الجلسة</span><select id="asn" class="sel"><option value="">—</option>${Array.from({ length: 22 }, (_, i) => `<option value="${i + 1}">الجلسة ${i + 1}</option>`).join('')}</select></div>
+      <div class="fcol"><span class="lbl">التاريخ</span><input type="date" id="ad" value="${a.date}"></div>
+      <div class="fcol"><span class="lbl">الوقت</span><select id="at" class="sel">${slotsOf(sec).map(t => `<option value="${t}" ${t === a.time ? 'selected' : ''}>${t12(t)}</option>`).join('')}</select></div>
+      <div class="fcol" style="grid-column:1/-1"><span class="lbl">${sec === 'women' ? 'المعالجة' : 'المعالج'}</span>
+        <div class="thpick">${therapists(sec).map(t => `<button type="button" class="thb ${t.id === tid ? 'on' : ''}" data-tid="${t.id}" style="--c:${t.color}"><span class="dot" style="background:${t.color}"></span>${esc(t.name)}</button>`).join('')}</div></div>
+      <div class="fcol"><span class="lbl">ملاحظة (نوع الجلسة...)</span><input id="ano" value="${esc(a.note)}"></div>
+      <div class="fcol"><span class="lbl">المبلغ المدفوع لهذه الجلسة <small class="hint">(اختياري)</small></span><input id="aam" value="${esc(a.amount)}" inputmode="numeric"></div>
       ${isNew ? '' : `<div class="fcol" style="grid-column:1/-1"><span class="lbl">حالة الموعد</span><div class="stbtns">${Object.entries(ST).map(([k, v]) => `<button type="button" class="stb st-${k} ${a.status === k ? 'on' : ''}" data-st="${k}">${v}</button>`).join('')}</div></div>`}
     </div>
-    <div id="linkp" style="margin-top:10px"></div>
-    <div class="modal-f"><button class="btn big" id="ok">${isNew ? '✓ حجز' : 'حفظ'}</button><button class="btn ghost" id="cn">إلغاء</button><span class="spacer"></span>${isNew ? '' : '<button class="btn danger" id="del">حذف الموعد</button>'}</div>`);
-  let pid = a.patientId, st = a.status;
-  const linkUI = () => { const p = pid && getP(pid);
-    $('#linkp').innerHTML = p ? `<span class="badge" style="background:#e7f6ee;color:var(--ok)">مرتبط بملف رقم ${esc(p.fileNo)}</span> <button class="btn light sm" id="openf">📁 فتح ملف المريض</button>`
-      : `<button class="btn light sm" id="mkf">➕ إنشاء ملف جديد لهذا المريض</button>`;
-    if ($('#openf')) $('#openf').onclick = () => { save(true); go('p/' + pid + '/1'); };
-    if ($('#mkf')) $('#mkf').onclick = () => { const np = newPatient(a.section, { name: $('#an').value.trim(), phone: $('#ap').value.trim() }); DB.savePatient(np); pid = np.id; save(true); go('p/' + np.id + '/1'); };
+    <div id="histBox"></div>
+    <div class="modal-f"><button class="btn big" id="ok">${isNew ? '✓ حجز الموعد' : 'حفظ'}</button><button class="btn ghost" id="cn">إلغاء</button><span class="spacer"></span>${isNew ? '' : '<button class="btn danger" id="del">حذف الموعد</button>'}</div>`);
+  $('#asn').value = a.sessionNo || (isNew && pid ? nextSessionNo(pid) : a.sessionNo || '');
+  const linkUI = () => { const p = pid && getP(pid); const nm = $('#an').value.trim();
+    $('#linkp').innerHTML = p ? `<div class="linked">✅ مرتبط بملف <b>${esc(p.name)}</b> — رقم الملف ${esc(p.fileNo)} <button class="btn light sm" id="openf">📁 فتح الملف</button> <button class="btn ghost sm" id="unl">تغيير</button></div>`
+      : nm ? `<div class="newp">🆕 مريض جديد — سيُنشأ له ملف تلقائياً باسم «${esc(nm)}» عند الحفظ</div>` : '';
+    $('#histBox').innerHTML = p ? `<div class="lbl" style="margin:12px 0 4px">📋 سجل المواعيد السابقة لهذا المريض</div>${histHTML(patientAppts(pid, a.id), sec)}` : '';
+    if ($('#openf')) $('#openf').onclick = () => { if (save(true)) go('p/' + pid + '/2'); };
+    if ($('#unl')) $('#unl').onclick = () => { pid = ''; $('#an').value = ''; $('#an').focus(); linkUI(); };
   };
+  const pick = p => { pid = p.id; $('#an').value = p.name; $('#ap').value = p.phone || ''; $('#sg').classList.add('hidden'); if (isNew || !a.sessionNo) $('#asn').value = nextSessionNo(pid); linkUI(); };
   linkUI();
-  $('#an').oninput = () => { const q = $('#an').value.trim(); pid = '';
-    const m = q ? pts.filter(p => (p.name || '').includes(q) || (p.phone || '').includes(q)).slice(0, 6) : [];
-    $('#sg').innerHTML = m.map(p => `<button type="button" data-pid="${p.id}"><b>${esc(p.name)}</b> <small>ملف ${esc(p.fileNo)} · ${esc(p.phone || '')}</small></button>`).join('');
-    $('#sg').classList.toggle('hidden', !m.length);
-    $$('[data-pid]', $('#sg')).forEach(b => b.onclick = () => { const p = getP(b.dataset.pid); pid = p.id; $('#an').value = p.name; $('#ap').value = p.phone || ''; $('#sg').classList.add('hidden'); linkUI(); });
+  const norm = x => String(x || '').replace(/[أإآ]/g, 'ا').replace(/ة/g, 'ه').replace(/ى/g, 'ي').toLowerCase();
+  $('#an').oninput = () => { const q = norm($('#an').value.trim()); pid = '';
+    const m = q ? pts.filter(p => norm(p.name).split(/\s+/).some(w => w.startsWith(q)) || norm(p.name).startsWith(q) || (p.phone || '').includes(q)).slice(0, 8) : [];
+    const last = id => { const l = patientAppts(id)[0]; return l ? 'آخر موعد ' + l.date : 'لا مواعيد سابقة'; };
+    $('#sg').innerHTML = q ? m.map(p => `<button type="button" data-pid="${p.id}"><b>${esc(p.name)}</b> <small>ملف ${esc(p.fileNo)} · ${esc(p.phone || '—')} · ${last(p.id)}</small></button>`).join('') +
+      `<button type="button" class="sg-new" id="sgNew">➕ إضافة مريض جديد باسم «${esc($('#an').value.trim())}»</button>` : '';
+    $('#sg').classList.toggle('hidden', !q);
+    $$('[data-pid]', $('#sg')).forEach(b => b.onclick = () => pick(getP(b.dataset.pid)));
+    $('#sgNew') && ($('#sgNew').onclick = () => { $('#sg').classList.add('hidden'); $('#asn').value = 1; $('#ap').focus(); });
     linkUI(); };
+  $$('[data-tid]').forEach(b => b.onclick = () => { tid = tid === b.dataset.tid ? '' : b.dataset.tid; $$('[data-tid]').forEach(x => x.classList.toggle('on', x.dataset.tid === tid)); });
   $$('[data-st]').forEach(b => b.onclick = () => { st = b.dataset.st; $$('[data-st]').forEach(x => x.classList.toggle('on', x === b)); });
   function save(silent) {
-    const name = $('#an').value.trim(); if (!name && !silent) { toast('اكتب اسم المريض'); return false; }
+    const name = $('#an').value.trim(); if (!name) { if (!silent) toast('اكتب اسم المريض'); return false; }
+    if (!pid) { const np = newPatient(sec, { name, phone: $('#ap').value.trim() }); DB.savePatient(np); pid = np.id; }
+    const th = therapists(sec).find(t => t.id === tid);
     const o = Object.assign({}, a, { id: a.id || uid('a'), created: a.created || new Date().toISOString(), date: $('#ad').value || a.date, time: $('#at').value,
-      name, phone: $('#ap').value.trim(), by: $('#ab').value.trim(), note: $('#ano').value.trim(), status: st, patientId: pid || '' });
-    DB.saveAppt(o); a.id = o.id; if (liveRedraw && current === 'appts') liveRedraw(); return true;
+      name, phone: $('#ap').value.trim(), tid: tid || '', by: th ? th.name : '', note: $('#ano').value.trim(), status: st, patientId: pid, sessionNo: $('#asn').value, amount: $('#aam').value.trim() });
+    DB.saveAppt(o); a.id = o.id; a.created = o.created;
+    syncSessionRow(o);
+    if (liveRedraw && current === 'appts') liveRedraw(); return true;
   }
-  $('#ok').onclick = () => { if (save()) { closeModal(); toast(isNew ? 'تم حجز الموعد' : 'تم الحفظ'); } };
+  $('#ok').onclick = () => { if (save()) { closeModal(); toast(isNew ? 'تم حجز الموعد وربطه بملف المريض' : 'تم الحفظ'); } };
   $('#cn').onclick = closeModal; $('#mc').onclick = closeModal;
   if ($('#del')) $('#del').onclick = () => { DB.deleteAppt(a); closeModal(); if (liveRedraw) liveRedraw(); toast('تم حذف الموعد'); };
   if (isNew) $('#an').focus();
+}
+/* عند تأكيد الحضور: تعبئة سطر الجلسة في ملف المريض تلقائياً */
+function syncSessionRow(o) {
+  const p = getP(o.patientId); const n = +o.sessionNo; if (!p || !n || o.status !== 'done') return;
+  while (p.sessions.length < n) p.sessions.push({ date: '', note: '', by: '' });
+  const r = p.sessions[n - 1];
+  r.date = o.date; if (o.by) r.by = o.by; if (o.amount) r.amount = o.amount; if (!r.note && o.note) r.note = o.note;
+  if (o.amount && p.payMode !== 'session') { p.payMode = 'session'; DB.savePatient(p, ['sessions', 'payMode']); }
+  else DB.savePatient(p, ['sessions']);
 }
 
 /* ---------- settings ---------- */
@@ -566,6 +630,10 @@ function settingsView() {
     <div class="pform"><div class="fcol"><span class="lbl">كلمة المرور الحالية</span><input id="op" type="password" dir="ltr"></div>
     <div class="fcol"><span class="lbl">كلمة المرور الجديدة (6 أحرف على الأقل)</span><input id="np" type="password" dir="ltr"></div></div>
     <button class="btn" id="saveAuth" style="margin-top:12px">حفظ</button></div>
+  ${DB.sections().map(sec => `<div class="sheet"><h3 style="margin-top:0">${sec === 'women' ? '👩 المعالجات — قسم النساء' : '👨 المعالجون — قسم الرجال'}</h3>
+    <p style="color:var(--muted);margin-top:0">كل اسم له لون يظهر به في جدول المواعيد. اضغط على اللون لتغييره.</p>
+    <div class="thlist" id="thl-${sec}"></div>
+    <div class="row" style="margin-top:10px"><input class="search" style="flex:1;min-width:180px;padding:10px 14px" id="thn-${sec}" placeholder="${sec === 'women' ? 'اسم معالجة جديدة' : 'اسم معالج جديد'}"><button class="btn" data-addth="${sec}">➕ إضافة</button></div></div>`).join('')}
   <div class="sheet"><h3 style="margin-top:0">🔄 المزامنة</h3>
     ${DB.mode === 'cloud' ? `<p style="margin:0" class="sync on">● المزامنة اللحظية مفعّلة — أي تعديل يظهر فوراً على كل الأجهزة المسجّلة بنفس القسم.</p>`
       : `<p style="margin-top:0" class="sync off">● الحفظ الآن على هذا الجهاز فقط.</p><a class="btn light" href="#setup">إعداد المزامنة بين الأجهزة</a>`}</div>
@@ -575,7 +643,26 @@ function settingsView() {
     <label class="btn light" style="cursor:pointer">⬆️ استرجاع نسخة<input type="file" id="imp" accept=".json,application/json" hidden></label></div></div>
   <div class="sheet"><button class="btn ghost" id="out">🚪 تسجيل الخروج</button></div>`;
 }
+function bindTherapists() {
+  DB.sections().forEach(sec => {
+    const box = $('#thl-' + sec); if (!box) return;
+    const list = therapists(sec);
+    box.innerHTML = list.length ? list.map(t => `<div class="throw"><label class="thcol" style="background:${t.color}"><input type="color" value="${t.color}" data-thc="${sec}|${t.id}"></label>
+      <b>${esc(t.name)}</b><span class="spacer"></span><button class="x" data-thdel="${sec}|${t.id}" title="حذف">×</button></div>`).join('') : '<div class="empty">لا يوجد أسماء بعد</div>';
+  });
+  $$('[data-thc]').forEach(i => i.onchange = () => { const [sec, id] = i.dataset.thc.split('|'); const t = therapists(sec).find(x => x.id === id); if (t) { t.color = i.value; DB.saveMeta(sec); bindTherapists(); } });
+  $$('[data-thdel]').forEach(b => b.onclick = () => { const [sec, id] = b.dataset.thdel.split('|'); const t = therapists(sec).find(x => x.id === id); if (!t) return;
+    openModal(`<div class="modal-h"><h3>حذف «${esc(t.name)}» من القائمة؟</h3></div><p>المواعيد السابقة تبقى محفوظة باسمه، لكنه لن يظهر للاختيار في المواعيد الجديدة.</p>
+      <div class="row"><button class="btn danger" id="yes">نعم، احذف</button><button class="btn ghost" id="no">إلغاء</button></div>`);
+    $('#yes').onclick = () => { DB.meta[sec].therapists = therapists(sec).filter(x => x.id !== id); DB.saveMeta(sec); closeModal(); bindTherapists(); toast('تم الحذف'); }; $('#no').onclick = closeModal; });
+}
 function bindSettings() {
+  bindTherapists(); liveRedraw = bindTherapists;
+  $$('[data-addth]').forEach(b => b.onclick = () => { const sec = b.dataset.addth, inp = $('#thn-' + sec), name = inp.value.trim(); if (!name) return toast('اكتب الاسم أولاً');
+    const list = therapists(sec); if (list.some(t => t.name === name)) return toast('الاسم موجود مسبقاً');
+    const used = list.map(t => t.color); const color = DB.PALETTE.find(c => !used.includes(c)) || DB.PALETTE[list.length % DB.PALETTE.length];
+    DB.meta[sec] = DB.meta[sec] || { therapists: [] }; DB.meta[sec].therapists = list.concat([{ id: sec[0] + Date.now().toString(36), name, color }]);
+    DB.saveMeta(sec); inp.value = ''; bindTherapists(); toast('تمت الإضافة'); });
   $('#saveAuth').onclick = async () => { const o = $('#op').value, n = $('#np').value; if (n.length < 6) return toast('كلمة المرور الجديدة 6 أحرف على الأقل');
     try { await DB.changePassword(o, n); $('#op').value = $('#np').value = ''; toast('تم تغيير كلمة المرور'); } catch (e) { toast('كلمة المرور الحالية غير صحيحة'); } };
   $('#exp').onclick = () => { const blob = new Blob([JSON.stringify({ app: 'motion-life', v: 2, at: new Date().toISOString(), role: DB.role, patients: allP(), appts: [...DB.appts.values()] }, null, 1)], { type: 'application/json' });
@@ -706,7 +793,7 @@ DB.on((kind, info) => {
     if (info.remote && info.ids && info.ids.includes(id) && livePatient && livePatient.id === id) livePatient.apply();
     return;
   }
-  if ((current === 'patients' || current === 'appts') && liveRedraw) return liveRedraw();
+  if ((current === 'patients' || current === 'appts' || current === 'settings') && liveRedraw) return liveRedraw();
   if (current === 'home' && $('#modal').classList.contains('hidden')) render();
 });
 setInterval(() => { if (current === 'appts' && liveRedraw && $('#modal').classList.contains('hidden')) liveRedraw(); }, 60000);

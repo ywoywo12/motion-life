@@ -15,10 +15,16 @@ async function hash(s) {
   try { const b = await crypto.subtle.digest('SHA-256', new TextEncoder().encode('motionlife|' + s));
     return Array.from(new Uint8Array(b)).map(x => x.toString(16).padStart(2, '0')).join(''); } catch (e) { return 'p:' + s; }
 }
+const PALETTE = ['#d6457f', '#2f7fd0', '#22955f', '#e07b12', '#8a55d0', '#d23c32', '#159c9c', '#b08400', '#5f7d1e', '#b84aa0', '#4457d4', '#8a5a2b', '#e0607a', '#3a9bd8'];
+const DEF_T = {
+  women: ['نور الهدى', 'جمان', 'علا', 'تقى', 'صفا', 'رهف', 'إسراء', 'هيا', 'فاطمة'],
+  men: ['ابو علاء', 'ابو معاذ', 'خالد', 'علي', 'عبدالرحمن', 'عبدو صوان', 'زكريا']
+};
+const defMeta = sec => ({ therapists: DEF_T[sec].map((n, i) => ({ id: sec[0] + (i + 1), name: n, color: PALETTE[i % PALETTE.length] })) });
 const cfg = () => window.ML_FIREBASE || ls.get('ml_fb_cfg', null);
 
 const M = {
-  ROLES, mode: 'local', role: null, user: null,
+  ROLES, PALETTE, mode: 'local', meta: { women: defMeta('women'), men: defMeta('men') }, role: null, user: null,
   patients: new Map(), appts: new Map(),
   dirty: {}, listeners: [], online: navigator.onLine, unsub: [],
   on(fn) { this.listeners.push(fn); },
@@ -43,7 +49,7 @@ M.init = async function () {
   }
   const s = (() => { try { return sessionStorage.getItem('ml_role'); } catch (e) { return null; } })();
   if (s && ROLES[s]) { this.role = s; this._startLocal(); }
-  window.addEventListener('storage', e => { if (e.key === 'ml_patients' || e.key === 'ml_appts') { this._loadLocal(); this.emit('data', { remote: true }); } });
+  window.addEventListener('storage', e => { if (e.key === 'ml_patients' || e.key === 'ml_appts' || e.key === 'ml_meta') { this._loadLocal(); this.emit('data', { remote: true }); } });
 };
 M._setUser = function (user) {
   this.user = user;
@@ -104,6 +110,7 @@ M._loadLocal = function () {
     if (secs.includes(p.section)) this.patients.set(p.id, p);
   });
   ls.get('ml_appts', []).forEach(a => { if (secs.includes(a.section)) this.appts.set(a.id, a); });
+  const mt = ls.get('ml_meta', {}); ['women', 'men'].forEach(s => { if (mt[s]) this.meta[s] = mt[s]; });
 };
 M._startLocal = function () { this._loadLocal(); };
 const lsUpsert = (key, obj, del) => {
@@ -116,6 +123,7 @@ const lsUpsert = (key, obj, del) => {
 const col = (sec, name) => M.fs.collection('sections').doc(sec).collection(name);
 M._startCloud = function () {
   for (const sec of this.sections()) {
+    this.unsub.push(col(sec, 'meta').doc('config').onSnapshot(d => { if (d.exists) { const m = d.data(); if (m && m.therapists) this.meta[sec] = m; } this.emit('data', { kind: 'meta', ids: [], remote: true }); }, err => console.error(err)));
     [['patients', this.patients], ['appts', this.appts]].forEach(([name, map]) => {
       const u = col(sec, name).onSnapshot({ includeMetadataChanges: false }, snap => {
         const ids = [];
@@ -155,6 +163,11 @@ M.saveAppt = function (a) {
   this.appts.set(a.id, a);
   if (this.mode === 'local') return Promise.resolve(lsUpsert('ml_appts', a));
   const d = clean(a); delete d.id; return col(a.section, 'appts').doc(a.id).set(d);
+};
+M.saveMeta = function (sec) {
+  const m = JSON.parse(JSON.stringify(this.meta[sec]));
+  if (this.mode === 'local') { const all = ls.get('ml_meta', {}); all[sec] = m; return Promise.resolve(ls.set('ml_meta', all)); }
+  return col(sec, 'meta').doc('config').set(m);
 };
 M.deleteAppt = function (a) {
   this.appts.delete(a.id);
