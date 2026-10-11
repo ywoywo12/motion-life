@@ -36,6 +36,6 @@ start "" http://localhost:8080
 echo.
 echo   ==================================================
 echo    Done. Open on the other devices (same Wi-Fi):
-for /f "tokens=2 delims=:" %%a in ('ipconfig ^| findstr /c:"IPv4"') do echo      http:%%a:8080
+powershell -NoProfile -Command "Get-NetIPAddress -AddressFamily IPv4 | Where-Object { $_.IPAddress -notlike '127.*' -and $_.IPAddress -notlike '169.254.*' } | ForEach-Object { '      http://' + $_.IPAddress + ':8080' }"
 echo   ==================================================
 pause
