@@ -471,35 +471,53 @@ function wavFrom(chunks, rate) {
 }
 async function serverMic(b, ta) {
   if (!window.isSecureContext || !navigator.mediaDevices) return needSecure();
-  let stream; try { stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, channelCount: 1 } }); }
+  let stream; try { stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true, channelCount: 1 } }); }
   catch (e) { return micHelp('الميكروفون غير مسموح', '<p>اسمح للموقع باستخدام الميكروفون: اضغط على رمز القفل 🔒 بجانب العنوان ← الأذونات ← الميكروفون ← سماح، ثم أعد المحاولة.</p>'); }
   const ctx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 16000 });
+  if (ctx.state === 'suspended') { try { await ctx.resume(); } catch (e) {} }
   const src = ctx.createMediaStreamSource(stream), proc = ctx.createScriptProcessor(4096, 1, 1);
-  const rate = ctx.sampleRate; let seg = [], segLen = 0, silent = 0, voiced = false, queue = Promise.resolve(), pending = 0, stopped = false;
+  const rate = ctx.sampleRate;
+  let seg = [], segLen = 0, silent = 0, voicedLen = 0, floor = 0.01, queue = Promise.resolve(), pending = 0, stopped = false, t0 = Date.now(), wake = null;
+  try { wake = await navigator.wakeLock.request('screen'); } catch (e) {}   // منع انطفاء شاشة التاب أثناء الحديث
   const base = () => ta.value ? ta.value.replace(/\s*$/, '') + ' ' : '';
-  const status = () => { $('span', b).textContent = stopped ? (pending ? 'جارٍ الكتابة...' : 'تسجيل صوتي') : (pending ? '⏺ إيقاف — جارٍ الكتابة...' : '⏺ إيقاف التسجيل'); };
+  const label = $('span', b);
+  const status = () => { const s = Math.floor((Date.now() - t0) / 1000), mm = Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0');
+    label.textContent = stopped ? (pending ? '⏳ جارٍ الكتابة...' : 'تسجيل صوتي') : `⏺ ${mm} — اضغط للإيقاف${pending ? ' (يكتب...)' : ''}`; };
+  const timer = setInterval(() => { if (!stopped) status(); }, 1000);
   const flush = () => {
-    if (!segLen || !voiced) { seg = []; segLen = 0; voiced = false; return; }
-    const wav = wavFrom(seg, rate); seg = []; segLen = 0; voiced = false; pending++; status();
+    const enough = voicedLen / rate >= 0.4;
+    const wav = enough && segLen ? wavFrom(seg, rate) : null; seg = []; segLen = 0; voicedLen = 0;
+    if (!wav) return;
+    pending++; status();
     queue = queue.then(async () => {
       try { const r = await fetch('/api/stt', { method: 'POST', headers: { Authorization: 'Bearer ' + store.get('ml_srv_token', ''), 'Content-Type': 'audio/wav' }, body: wav });
         const j = await r.json().catch(() => ({}));
         if (r.ok && j.text) { ta.value = base() + j.text; ta.dispatchEvent(new Event('input')); }
-        else if (!r.ok) toast(j.error === 'stt_loading' ? 'محرك الصوت يبدأ التشغيل... أعد المحاولة بعد قليل' : 'تعذّر تحويل هذا المقطع');
+        else if (!r.ok) toast(j.error === 'stt_loading' ? 'محرك الصوت يبدأ التشغيل... أعد المحاولة بعد نصف دقيقة' : 'تعذّر تحويل هذا المقطع');
       } catch (e) { toast('لا يوجد اتصال بخادم المركز'); }
       pending--; status(); if (stopped && !pending) b.classList.remove('rec', 'busy');
     });
   };
   proc.onaudioprocess = e => {
+    if (stopped) return;
     const d = new Float32Array(e.inputBuffer.getChannelData(0)); let sum = 0; for (let i = 0; i < d.length; i++) sum += d[i] * d[i];
-    const rms = Math.sqrt(sum / d.length); seg.push(d); segLen += d.length;
-    if (rms > 0.012) { voiced = true; silent = 0; } else silent += d.length;
-    const secs = segLen / rate;
-    if ((secs > 3 && silent / rate > 0.8) || secs > 20) flush();   // يقطع عند التوقف عن الكلام
+    const rms = Math.sqrt(sum / d.length);
+    if (rms < floor * 1.5) floor = floor * 0.95 + rms * 0.05;            // يتعلّم مستوى ضجة الغرفة
+    const speech = rms > Math.max(0.012, floor * 2.5);
+    seg.push(d); segLen += d.length;
+    if (speech) { voicedLen += d.length; silent = 0; } else silent += d.length;
+    const secs = segLen / rate, pause = silent / rate;
+    // نقطع فقط عند وقفة واضحة بعد جملة كاملة، أو كل 25 ثانية كحد أقصى
+    if ((secs >= 6 && pause >= 1.3) || secs >= 25) flush();
   };
   src.connect(proc); proc.connect(ctx.destination);
-  rec = { stop() { stopped = true; flush(); try { proc.disconnect(); src.disconnect(); stream.getTracks().forEach(t => t.stop()); ctx.close(); } catch (e) {} rec = null; recBtn = null; if (!pending) b.classList.remove('rec'); else b.classList.add('busy'); status(); } };
-  recBtn = b; b.classList.add('rec'); status(); toast('🎤 تكلّم الآن... يُكتب الكلام بعد كل توقف قصير. اضغط مرة ثانية للإيقاف');
+  const finish = () => { if (stopped) return; stopped = true; clearInterval(timer); flush();
+    try { proc.disconnect(); src.disconnect(); stream.getTracks().forEach(t => t.stop()); ctx.close(); } catch (e) {}
+    try { wake && wake.release(); } catch (e) {}
+    rec = null; recBtn = null; if (!pending) b.classList.remove('rec'); else b.classList.add('busy'); status(); };
+  stream.getAudioTracks().forEach(t => t.onended = () => { toast('توقف الميكروفون — تم حفظ ما سُجّل'); finish(); });
+  rec = { stop: finish };
+  recBtn = b; b.classList.add('rec'); status(); toast('🎤 تكلّم بشكل طبيعي... يُكتب الكلام بعد كل وقفة. اضغط الزر مرة ثانية عند الانتهاء');
 }
 function browserMic(b, ta) {
   if (!SR) return micHelp('التسجيل الصوتي غير مدعوم في هذا المتصفح', '<p>افتح الموقع من متصفح <b>Google Chrome</b> أو <b>Microsoft Edge</b>، أو استخدم زر الميكروفون 🎤 في لوحة مفاتيح الجوال.</p>');

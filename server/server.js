@@ -72,27 +72,57 @@ const STT_DIR = path.join(BASE, 'stt');
 const STT_PORT = 8178;
 const sttFiles = () => { if (!fs.existsSync(STT_DIR)) return null;
   const exe = ['whisper-server.exe', 'whisper-server'].map(f => path.join(STT_DIR, f)).find(f => fs.existsSync(f));
-  const model = fs.readdirSync(STT_DIR).filter(f => /^ggml-.*\.bin$/.test(f)).sort((a, b) => fs.statSync(path.join(STT_DIR, b)).size - fs.statSync(path.join(STT_DIR, a)).size)[0];
+  const model = fs.readdirSync(STT_DIR).filter(f => /^ggml-.*\.bin$/.test(f) && !/silero/.test(f)).sort((a, b) => fs.statSync(path.join(STT_DIR, b)).size - fs.statSync(path.join(STT_DIR, a)).size)[0];
   return exe && model ? { exe, model: path.join(STT_DIR, model) } : null; };
-let sttProc = null, sttReady = false;
+let sttProc = null, sttReady = false, sttTier = 0;
 function startSTT() {
   const f = sttFiles(); if (!f) { console.log('   (التسجيل الصوتي بدون إنترنت غير مثبت بعد — شغّل UPDATE-MOTION-LIFE.bat)'); return; }
   const threads = String(Math.max(2, Math.min(8, os.cpus().length - 1)));
-  sttProc = spawn(f.exe, ['-m', f.model, '-l', 'ar', '-t', threads, '--host', '127.0.0.1', '--port', String(STT_PORT)], { cwd: STT_DIR, windowsHide: true });
-  sttProc.stdout.on('data', d => { if (/listening|server is listening|HTTP server/i.test(String(d))) sttReady = true; });
-  sttProc.stderr.on('data', d => { if (/listening/i.test(String(d))) sttReady = true; });
-  sttProc.on('exit', code => { sttReady = false; sttProc = null; console.log('   (محرك الصوت توقف، إعادة تشغيل بعد 5 ثوانٍ)'); setTimeout(startSTT, 5000); });
-  setTimeout(() => { sttReady = true; }, 20000);
-  console.log('   التسجيل الصوتي بدون إنترنت: مفعّل (' + path.basename(f.model) + ')');
+  const vad = fs.readdirSync(STT_DIR).find(x => /^ggml-silero.*\.bin$/.test(x));
+  const base = ['-m', f.model, '-l', 'ar', '-t', threads, '--host', '127.0.0.1', '--port', String(STT_PORT)];
+  // إعدادات تمنع تكرار الكلمات وتتجاهل السكوت والضجة؛ إذا لم يقبلها الإصدار نرجع لإعدادات أبسط تلقائياً
+  const tiers = [
+    base.concat(['-mc', '0', '-bs', '5', '-bo', '5', '-sns'], vad ? ['--vad', '-vm', path.join(STT_DIR, vad)] : []),
+    base.concat(['-mc', '0', '-bs', '5', '-bo', '5']),
+    base];
+  const args = tiers[Math.min(sttTier, tiers.length - 1)];
+  const started = Date.now();
+  sttReady = false;
+  sttProc = spawn(f.exe, args, { cwd: STT_DIR, windowsHide: true });
+  const onOut = d => { if (/listening/i.test(String(d))) sttReady = true; };
+  sttProc.stdout.on('data', onOut); sttProc.stderr.on('data', onOut);
+  sttProc.on('exit', () => {
+    sttReady = false; sttProc = null;
+    if (Date.now() - started < 15000 && sttTier < tiers.length - 1) { sttTier++; return startSTT(); }   // الخيارات غير مدعومة → إعدادات أبسط
+    console.log('   (محرك الصوت توقف، إعادة تشغيل بعد 5 ثوانٍ)'); setTimeout(startSTT, 5000);
+  });
+  setTimeout(() => { if (sttProc) sttReady = true; }, 30000);
+  console.log('   التسجيل الصوتي بدون إنترنت: مفعّل (' + path.basename(f.model) + (vad && sttTier === 0 ? ' + كشف الكلام' : '') + ', مستوى ' + sttTier + ')');
 }
 process.on('exit', () => { try { sttProc && sttProc.kill(); } catch (e) {} });
 async function transcribe(wav) {
   const fd = new FormData();
   fd.append('file', new Blob([wav], { type: 'audio/wav' }), 'audio.wav');
-  fd.append('language', 'ar'); fd.append('response_format', 'json'); fd.append('temperature', '0.0');
+  fd.append('language', 'ar'); fd.append('response_format', 'json'); fd.append('temperature', '0.0'); fd.append('temperature_inc', '0.2');
   const r = await fetch('http://127.0.0.1:' + STT_PORT + '/inference', { method: 'POST', body: fd });
   if (!r.ok) throw new Error('stt ' + r.status);
-  const j = await r.json(); return String(j.text || '').replace(/\[[^\]]*\]/g, '').replace(/\s+/g, ' ').trim();
+  const j = await r.json(); return cleanText(j.text);
+}
+/* تنظيف النص: حذف التكرار المتتالي والعبارات الوهمية التي يولّدها النموذج عند السكوت */
+const JUNK = [/ترجمة\s*نانسي\s*قنقر/g, /اشتركوا?\s*في\s*القناة/g, /شكرا\s*(لكم\s*)?(على|لل)\s*المشاهدة/g, /\(?\s*موسيقى\s*\)?/g, /نشكركم\s*على\s*المتابعة/g, /سبحان\s*الله/g];
+function cleanText(t) {
+  t = String(t || '').replace(/\[[^\]]*\]|\([^)]*\)/g, ' ');
+  JUNK.forEach(re => { t = t.replace(re, ' '); });
+  let w = t.split(/\s+/).filter(Boolean);
+  for (let n = 1; n <= 8; n++) {            // كلمة أو عبارة (حتى 8 كلمات) مكررة متتالياً ← تبقى مرة واحدة
+    const out = [];
+    for (let i = 0; i < w.length; i++) {
+      out.push(w[i]);
+      if (out.length >= 2 * n) { const a = out.slice(-2 * n, -n).join(' '), b = out.slice(-n).join(' '); if (a === b) out.splice(-n, n); }
+    }
+    w = out;
+  }
+  return w.join(' ').replace(/\s+([،.؟!,])/g, '$1').trim();
 }
 const rawBody = req => new Promise((ok, bad) => { const parts = []; let n = 0; req.on('data', d => { n += d.length; if (n > 60e6) { bad(new Error('too big')); req.destroy(); } else parts.push(d); }); req.on('end', () => ok(Buffer.concat(parts))); });
 
