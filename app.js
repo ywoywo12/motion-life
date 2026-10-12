@@ -39,13 +39,14 @@ const canFiles = p => !TH() || can('files') || canEditP(p);
 const canEditP = p => !TH() || can('editAll') || (can('editOwn') && !!p && linkedTo(p, myTid(), myName()));
 /* الحالة المالية لكل ملف */
 function payState(p) {
-  if (hidePrices()) { const st = p._pstat || 'none'; return { total: 0, paid: 0, remain: num(p._remain), status: st }; }
+  if (hidePrices()) { const st = p._pstat || 'none'; return { total: 0, paid: 0, remain: 0, pct: num(p._remainPct), status: st }; }
   const total = totalOf(p), paid = paidOf(p);
-  return { total, paid, remain: total - paid, status: !total ? 'none' : (paid >= total ? 'done' : 'due') };
+  return { total, paid, remain: total - paid, pct: total ? Math.max(0, Math.round((total - paid) / total * 100)) : 0, status: !total ? 'none' : (paid >= total ? 'done' : 'due') };
 }
 function payBadge(p) {
   const s = payState(p);
-  if (s.status === 'due') return `<span class="pay-dot due" title="متبقي ${fmt(s.remain)}${s.total ? ' من ' + fmt(s.total) : ''}">● متبقي ${fmt(s.remain)}</span>`;
+  if (s.status === 'due') return TH() ? `<span class="pay-dot due" title="النسبة المتبقية من المبلغ المتفق عليه">● متبقي ${s.pct}%</span>`
+    : `<span class="pay-dot due" title="متبقي ${fmt(s.remain)} من ${fmt(s.total)}">● متبقي ${fmt(s.remain)} (${s.pct}%)</span>`;
   if (s.status === 'done') return `<span class="pay-dot done" title="الدفعات مكتملة">● مكتمل الدفع</span>`;
   return '';
 }
@@ -406,7 +407,7 @@ function page1(p) {
 
 const paidOf = p => (p.payments || []).reduce((a, x) => a + num(x.amount), 0) + (p.payMode === 'session' ? (p.sessions || []).reduce((a, x) => a + num(x.amount), 0) : 0);
 const totalOf = p => num(p.agreedTotal) || (p.payMode === 'session' ? num(p.sessionPrice) * num(p.agreedSessions) : 0);
-const remainOf = p => totalOf(p) ? fmt(totalOf(p) - paidOf(p)) : '';
+const remainOf = p => { const t = totalOf(p); if (!t) return ''; const r = t - paidOf(p), pc = Math.max(0, Math.round(r / t * 100)); return TH() ? pc + '%' : fmt(r) + '  (' + pc + '%)'; };
 function page2(p) {
   const ps = p.payMode === 'session' && !hidePrices();
   const half = (from, to) => `<table class="sess"><thead><tr><th>الجلسة</th><th>التاريخ</th><th>الملاحظات / الاستجابة</th><th>المعالج</th>${ps ? '<th>المبلغ</th>' : ''}</tr></thead><tbody>
@@ -459,7 +460,7 @@ function noPriceBox(p) {
   return `<div class="box"><div class="box-t">الجلسات والذمم المالية</div><div class="box-b pay">
     <div class="paybox"><div class="f"><label>عدد الجلسات المتفق عليها:</label><div class="auto">${esc(p.agreedSessions || '—')}</div></div></div>
     <div class="paybox"><div class="f"><label>الجلسات المنفذة:</label><div class="auto">${sessionsOf(p).length}</div></div></div>
-    <div class="paybox"><div class="f"><label>المبلغ المتبقي:</label><div class="auto" id="remainNP">${s.status === 'due' ? `<b class="rem-red">${fmt(s.remain)}</b>` : s.status === 'done' ? '<b class="ok-green">✓ مكتمل الدفع</b>' : '—'}</div></div></div>
+    <div class="paybox"><div class="f"><label>النسبة المتبقية:</label><div class="auto" id="remainNP">${s.status === 'due' ? `<b class="rem-red">${s.pct}% من المبلغ المتفق عليه</b>` : s.status === 'done' ? '<b class="ok-green">✓ مكتمل الدفع</b>' : '—'}</div></div></div>
   </div></div>`;
 }
 
@@ -1243,15 +1244,15 @@ function bindFinance() {
   const draw = () => {
     const q = $('#fq').value.trim();
     const all = allP().filter(p => !lockPay() || linkedTo(p, myTid(), myName()));
-    const due = all.filter(p => payState(p).status === 'due' && (!q || (p.name + ' ' + p.fileNo).includes(q))).sort((a, b) => payState(b).remain - payState(a).remain);
+    const due = all.filter(p => payState(p).status === 'due' && (!q || (p.name + ' ' + p.fileNo).includes(q))).sort((a, b) => (payState(b).pct - payState(a).pct) || (payState(b).remain - payState(a).remain));
     const none = all.filter(p => payState(p).status === 'none').length;
     const totalRemain = due.reduce((s, p) => s + payState(p).remain, 0);
     $('#finCnt').textContent = due.length + ' ملف';
     const secs = DB.sections();
-    $('#finList').innerHTML = (due.length ? `<div class="fin-sum">إجمالي المبالغ المتبقية: <b>${fmt(totalRemain)}</b></div>` : '') + secs.map(sec => {
+    $('#finList').innerHTML = (due.length ? (TH() ? `<div class="fin-sum">عدد الملفات التي عليها مبالغ متبقية: <b>${due.length}</b></div>` : `<div class="fin-sum">إجمالي المبالغ المتبقية: <b>${fmt(totalRemain)}</b></div>`) : '') + secs.map(sec => {
       const L = due.filter(p => p.section === sec); if (!L.length) return secs.length > 1 ? `<h3 class="fin-sec">${SEC[sec]}</h3><div class="empty">لا توجد مبالغ متبقية ✓</div>` : '<div class="empty">لا توجد ملفات عليها مبالغ متبقية ✓</div>';
-      return (secs.length > 1 ? `<h3 class="fin-sec">${SEC[sec]}</h3>` : '') + `<div class="fin-tbl"><table class="slog fin"><thead><tr><th>المريض</th><th>رقم الملف</th>${hidePrices() ? '' : '<th>المتفق عليه</th><th>المدفوع</th>'}<th>المتبقي</th>${hidePrices() ? '' : '<th>آخر دفعة</th>'}<th>الجلسات</th><th>المعالجون</th></tr></thead><tbody>${L.map(p => { const st = payState(p);
-        return `<tr data-open="${p.id}"><td><span class="pay-dot due">●</span> <b>${esc(p.name || 'بدون اسم')}</b></td><td>${esc(p.fileNo)}</td>${hidePrices() ? '' : `<td>${fmt(st.total)}</td><td>${fmt(st.paid)}</td>`}<td class="rem">${fmt(st.remain)}</td>${hidePrices() ? '' : `<td>${esc(lastPayDate(p) || '—')}</td>`}<td>${sessionsOf(p).length}${p.agreedSessions ? ' / ' + esc(p.agreedSessions) : ''}</td><td>${patientTherapists(p).map(esc).join('، ') || '—'}</td></tr>`; }).join('')}</tbody></table></div>`;
+      return (secs.length > 1 ? `<h3 class="fin-sec">${SEC[sec]}</h3>` : '') + `<div class="fin-tbl"><table class="slog fin"><thead><tr><th>المريض</th><th>رقم الملف</th>${hidePrices() ? '' : '<th>المتفق عليه</th><th>المدفوع</th>'}<th>${TH() ? 'النسبة المتبقية' : 'المتبقي (النسبة)'}</th>${hidePrices() ? '' : '<th>آخر دفعة</th>'}<th>الجلسات</th><th>المعالجون</th></tr></thead><tbody>${L.map(p => { const st = payState(p);
+        return `<tr data-open="${p.id}"><td><span class="pay-dot due">●</span> <b>${esc(p.name || 'بدون اسم')}</b></td><td>${esc(p.fileNo)}</td>${hidePrices() ? '' : `<td>${fmt(st.total)}</td><td>${fmt(st.paid)}</td>`}<td class="rem">${TH() ? st.pct + '%' : `${fmt(st.remain)} <small>(${st.pct}%)</small>`}</td>${hidePrices() ? '' : `<td>${esc(lastPayDate(p) || '—')}</td>`}<td>${sessionsOf(p).length}${p.agreedSessions ? ' / ' + esc(p.agreedSessions) : ''}</td><td>${patientTherapists(p).map(esc).join('، ') || '—'}</td></tr>`; }).join('')}</tbody></table></div>`;
     }).join('') + (none && !lockPay() ? `<p class="hint" style="margin-top:12px">ℹ️ يوجد ${none} ملف لم يُكتب فيه «المبلغ الإجمالي المتفق عليه» أو «سعر الجلسة»، لذلك لا تظهر في المتابعة المالية.</p>` : '');
     $$('[data-open]').forEach(r => r.onclick = () => go('p/' + r.dataset.open + '/2'));
   };
@@ -1510,9 +1511,9 @@ function printPatient(p, exOnly) {
         ${exs ? `<div class="lbl" style="margin-top:6px">التمارين العلاجية:</div><ul class="pr-list">${exs}</ul>` : ''}</div></div>
       <div class="sess-wrap">${tbl(0, 11)}${tbl(11, 22)}</div>
       <div class="grid2" style="margin-bottom:8px">${pv('التقييم بعد الجلسة السادسة', p.eval6)}${pv('التقييم بعد الجلسة الثانية عشرة', p.eval12)}</div>
-      ${hidePrices() ? `<div class="pay"><div class="paybox">${pv('عدد الجلسات المتفق عليها', p.agreedSessions)}</div><div class="paybox">${pv('المبلغ المتبقي', payState(p).status === 'due' ? fmt(payState(p).remain) : '')}</div></div>` : `<div class="pay"><div class="paybox">${pv('عدد الجلسات المتفق عليها', p.agreedSessions)}</div><div class="paybox">${pv('المبلغ الإجمالي المتفق عليه', p.agreedTotal)}</div>
+      ${hidePrices() ? `<div class="pay"><div class="paybox">${pv('عدد الجلسات المتفق عليها', p.agreedSessions)}</div><div class="paybox">${pv('النسبة المتبقية', payState(p).status === 'due' ? payState(p).pct + '%' : '')}</div></div>` : `<div class="pay"><div class="paybox">${pv('عدد الجلسات المتفق عليها', p.agreedSessions)}</div><div class="paybox">${pv('المبلغ الإجمالي المتفق عليه', p.agreedTotal)}</div>
         ${p.payments.map((x, i) => `<div class="paybox soft"><div class="row" style="flex-wrap:nowrap"><b>الدفعة ${i + 1}:</b>${pv('المبلغ', x.amount)}${pv('التاريخ', x.date)}</div></div>`).join('')}
-        <div class="paybox">${pv('المبلغ المتبقي', p.agreedTotal ? fmt(num(p.agreedTotal) - paid) : '')}</div><div class="paybox">${pv('إجمالي المبلغ المدفوع', paid ? fmt(paid) : '')}</div></div>`}
+        <div class="paybox">${pv('المبلغ المتبقي', remainOf(p))}</div><div class="paybox">${pv('إجمالي المبلغ المدفوع', paid ? fmt(paid) : '')}</div></div>`}
       ${pfoot('Motion Life - الخطة العلاجية ومتابعة 22 جلسة', 'الحركة تبدأ من هنا')}</div>`;
   }
   if (exOnly && p.exercises.length) {

@@ -96,7 +96,7 @@ const numS = v => { const n = parseFloat(String(v == null ? '' : v).replace(/[^\
 function payStat(d) {
   const total = numS(d.agreedTotal) || (d.payMode === 'session' ? numS(d.sessionPrice) * numS(d.agreedSessions) : 0);
   const paid = (d.payments || []).reduce((s, x) => s + numS(x && x.amount), 0) + (d.payMode === 'session' ? (d.sessions || []).reduce((s, x) => s + numS(x && x.amount), 0) : 0);
-  return { remain: total - paid, st: !total ? 'none' : paid >= total ? 'done' : 'due' };
+  return { total, remain: total - paid, st: !total ? 'none' : paid >= total ? 'done' : 'due' };
 }
 /* ما يراه المعالج: بدون أرقام الهواتف، وبدون الأسعار والدفعات (حسب صلاحياته) — يبقى المبلغ المتبقي وعدد الجلسات */
 function viewDoc(a, coll, doc) {
@@ -106,7 +106,7 @@ function viewDoc(a, coll, doc) {
   if (!P.phone) delete d.phone;
   if (!P.prices) {
     if (coll === 'appts') delete d.amount;
-    else { const s = payStat(doc); d._remain = s.remain; d._pstat = s.st; delete d.sessionPrice; delete d.agreedTotal; delete d.payments;
+    else { const s = payStat(doc); d._remainPct = s.total ? Math.max(0, Math.round(s.remain / s.total * 100)) : 0; d._pstat = s.st; delete d.sessionPrice; delete d.agreedTotal; delete d.payments;
       if (Array.isArray(d.sessions)) d.sessions = d.sessions.map(r => { if (!r || typeof r !== 'object') return r; const x = Object.assign({}, r); delete x.amount; return x; }); }
   }
   return d;
@@ -313,7 +313,7 @@ async function api(req, res, url) {
     if (req.method === 'PUT') {
       const { doc, keys } = await body(req);
       if (!doc || typeof doc !== 'object') return send(res, 400, { error: 'doc' });
-      delete doc.id; delete doc._remain; delete doc._pstat;
+      delete doc.id; delete doc._remain; delete doc._remainPct; delete doc._pstat;
       if (coll === 'patients' && th) {
         if (!ex && !P.createFiles) return send(res, 403, { error: 'no_create' });
         if (ex && !(P.editAll || (P.editOwn && linkedSrv(sec, id, a)))) {
