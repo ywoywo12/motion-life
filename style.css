@@ -461,6 +461,20 @@ table.slog{width:100%;border-collapse:collapse;font-size:14px;background:#fff}
 table.slog th{background:#eef5f7;color:var(--navy);padding:6px 8px;text-align:right;font-weight:800;border-bottom:1.5px solid var(--line)}
 table.slog td{padding:6px 8px;border-bottom:1px solid #e6edf1}
 .box-t .cnt{background:#fff;border-radius:999px;padding:0 10px;font-size:13px;margin-inline-start:8px}
+.accsum{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px;margin:8px 0 12px}
+.acc-c{background:#fff;border:1.5px solid var(--line);border-radius:12px;padding:10px 14px;display:flex;flex-direction:column;gap:2px}
+.acc-c span{font-size:13.5px;color:var(--muted);font-weight:600} .acc-c b{font-size:24px;color:var(--navy)} .acc-c small{color:var(--muted)}
+.acc-c.in{border-top:4px solid var(--ok)} .acc-c.out{border-top:4px solid var(--danger)} .acc-c.t b{font-size:26px}
+.acc-c.net{border-top:4px solid var(--navy);background:#f3f8fa} .acc-c.net.neg b{color:var(--danger)}
+.acc-cats{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:12px}
+.acc-cat{font-size:13px;border-radius:8px;padding:4px 10px;background:#eef8f2;border:1px solid #bfe3cd} .acc-cat.out{background:#fdecea;border-color:#f3b8b1}
+table.acc td.amt,table.paytbl td.amt{font-weight:800;white-space:nowrap;direction:ltr;text-align:end} table.acc tr.in td.amt{color:var(--ok)} table.acc tr.out td.amt{color:var(--danger)}
+.kin{background:#e3f4ea;color:#17703f;border-radius:6px;padding:2px 8px;font-size:13px;font-weight:700} .kout{background:#fdecea;color:#a12619;border-radius:6px;padding:2px 8px;font-size:13px;font-weight:700}
+table.paytbl{max-width:560px} table.paytbl tr.in td{color:#17703f} table.paytbl tr.out td{color:#a12619} table.paytbl tr.tot td{font-weight:800;background:#f3f8fa;color:var(--navy)}
+.st-file{cursor:pointer} .st-file:hover{box-shadow:0 2px 10px rgba(15,44,76,.12)}
+.stmini{display:flex;flex-wrap:wrap;gap:4px 14px;font-size:13.5px;margin-top:6px;color:var(--text)}
+.btn.danger-l{background:#fdecea;color:#a12619;border:1.5px solid #f3b8b1}
+.pay-dot.cx{color:#6b7a86;background:#eef2f5}
 .fin-sum{background:#fdecea;border:1.5px solid #f3b8b1;color:#8f1d12;border-radius:10px;padding:10px 14px;margin-bottom:10px;font-size:16px}
 .fin-sec{color:var(--navy);margin:16px 0 8px}
 .fin-tbl{overflow-x:auto;border:1.5px solid var(--line);border-radius:10px}

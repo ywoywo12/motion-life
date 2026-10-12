@@ -25,7 +25,7 @@ const cfg = () => window.ML_FIREBASE || ls.get('ml_fb_cfg', null);
 
 const M = {
   ROLES, PALETTE, mode: 'local', meta: { women: defMeta('women'), men: defMeta('men') }, role: null, user: null,
-  patients: new Map(), appts: new Map(),
+  patients: new Map(), appts: new Map(), ledger: new Map(), staffDocs: new Map(),
   dirty: {}, listeners: [], online: navigator.onLine, unsub: [],
   on(fn) { this.listeners.push(fn); },
   emit(kind, info) { this.listeners.forEach(f => { try { f(kind, info || {}); } catch (e) { console.error(e); } }); },
@@ -118,6 +118,7 @@ M._loadLocal = function () {
     if (secs.includes(p.section)) this.patients.set(p.id, normP(p));
   });
   ls.get('ml_appts', []).forEach(a => { if (secs.includes(a.section)) this.appts.set(a.id, a); });
+  this.ledger.clear(); this.staffDocs.clear(); if (this.role === 'admin') { ls.get('ml_ledger', []).forEach(x => this.ledger.set(x.id, x)); ls.get('ml_staff', []).forEach(x => this.staffDocs.set(x.id, x)); }
   const mt = ls.get('ml_meta', {}); ['women', 'men'].forEach(s => { if (mt[s]) this.meta[s] = mt[s]; });
 };
 M._startLocal = function () { this._loadLocal(); };
@@ -227,9 +228,10 @@ M._srvLogin = async function (u, pw) {
 };
 M._srvLogout = async function () { try { await this._req('POST', '/api/logout'); } catch (e) {} this._clearSrv(); this.patients.clear(); this.appts.clear(); };
 M._applyAll = function (data) {
-  this.patients.clear(); this.appts.clear();
+  this.patients.clear(); this.appts.clear(); this.ledger.clear(); this.staffDocs.clear();
   Object.keys(data || {}).forEach(sec => {
     const d = data[sec] || {};
+    if (sec === 'admin') { Object.entries(d.ledger || {}).forEach(([id, x]) => { x.id = id; this.ledger.set(id, x); }); Object.entries(d.staff || {}).forEach(([id, x]) => { x.id = id; this.staffDocs.set(id, x); }); return; }
     Object.entries(d.patients || {}).forEach(([id, p]) => { p.id = id; p.section = sec; this.patients.set(id, normP(p)); });
     Object.entries(d.appts || {}).forEach(([id, a]) => { a.id = id; a.section = sec; this.appts.set(id, a); });
     if (d.meta && d.meta.config && d.meta.config.therapists) this.meta[sec] = d.meta.config;
@@ -240,6 +242,7 @@ M._saveCache = function () {
   clearTimeout(this._cT);
   this._cT = setTimeout(() => { const out = {}; this.sections().forEach(s => out[s] = { patients: {}, appts: {}, meta: { config: this.meta[s] } });
     this.patients.forEach(p => { if (out[p.section]) out[p.section].patients[p.id] = p; }); this.appts.forEach(a => { if (out[a.section]) out[a.section].appts[a.id] = a; });
+    if (this.role === 'admin') { out.admin = { ledger: {}, staff: {} }; this.ledger.forEach(x => out.admin.ledger[x.id] = x); this.staffDocs.forEach(x => out.admin.staff[x.id] = x); }
     ls.set(this._cacheKey(), out); }, 800);
 };
 M._startServer = async function () {
@@ -260,10 +263,11 @@ M._pull = async function () {
 M._applyMsg = function (m) {
   const remote = m.origin !== CID;
   if (m.coll === 'meta') { if (m.op === 'put' && m.doc && m.doc.therapists) this.meta[m.sec] = m.doc; this.emit('data', { kind: 'meta', ids: [], remote }); return; }
-  const map = m.coll === 'patients' ? this.patients : this.appts;
+  const map = this._mapOf(m.coll);
+  if (!map) return;
   if (m.op === 'del') map.delete(m.id);
   else if (remote) {
-    const d = JSON.parse(JSON.stringify(m.doc)); d.id = m.id; d.section = m.sec; const cur = map.get(m.id);
+    const d = JSON.parse(JSON.stringify(m.doc)); d.id = m.id; if (m.sec !== 'admin') d.section = m.sec; const cur = map.get(m.id);
     if (cur) { const dirty = this.dirty[m.id]; Object.keys(d).forEach(k => { if (!dirty || !dirty.has(k)) cur[k] = d[k]; }); } else map.set(m.id, d);
   }
   if (remote) this.emit('data', { kind: m.coll, ids: [m.id], remote: true });
@@ -309,7 +313,7 @@ M._queue = function (item) {
   ob.push(item); ls.set('ml_srv_outbox', ob);
 };
 M._applyOutbox = function () {   // تعديلات لم تصل الخادم بعد تبقى ظاهرة محلياً
-  this._outbox().forEach(it => { const map = it.coll === 'patients' ? this.patients : it.coll === 'appts' ? this.appts : null; if (!map) return;
+  this._outbox().forEach(it => { const map = this._mapOf(it.coll); if (!map) return;
     if (it.op === 'del') map.delete(it.id); else { const cur = map.get(it.id); if (cur && it.keys) it.keys.forEach(k => cur[k] = it.doc[k]); else { const d = clean(it.doc); d.id = it.id; d.section = it.sec; map.set(it.id, d); } } });
 };
 M._flush = async function () {
@@ -336,6 +340,18 @@ M._put = function (sec, coll, id, obj, keys) {
   return this._flush();
 };
 M._del = function (sec, coll, id) { this._queue({ op: 'del', sec, coll, id }); this._saveCache(); return this._flush(); };
+M._mapOf = function (coll) { return { patients: this.patients, appts: this.appts, ledger: this.ledger, staff: this.staffDocs }[coll] || null; };
+/* المحاسبة وملفات الموظفين (للإدارة فقط) */
+M.saveAdm = function (coll, o) {
+  o.updated = new Date().toISOString(); const map = this._mapOf(coll); map.set(o.id, o);
+  if (this.mode === 'server') return this._put('admin', coll, o.id, o);
+  ls.set(coll === 'ledger' ? 'ml_ledger' : 'ml_staff', [...map.values()]); return Promise.resolve();
+};
+M.deleteAdm = function (coll, o) {
+  const map = this._mapOf(coll); map.delete(o.id);
+  if (this.mode === 'server') return this._del('admin', coll, o.id);
+  ls.set(coll === 'ledger' ? 'ml_ledger' : 'ml_staff', [...map.values()]); return Promise.resolve();
+};
 M.staff = async function () { try { return (await (await fetch('/api/staff')).json()).staff || []; } catch (e) { return []; } };
 M.users = async function () { const r = await this._req('GET', '/api/users'); return r.ok ? r.users : []; };
 M.userAction = async function (body) { return this._req('POST', '/api/users', body); };

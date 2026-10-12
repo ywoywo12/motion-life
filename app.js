@@ -30,7 +30,7 @@ const lockPay = () => TH() && (!can('pay') || !can('prices'));
 const limAppt = () => TH() && !can('allAppts');
 const multiSec = () => DB.sections().length > 1;
 const canStats = () => DB.role === 'admin' || (TH() && can('stats'));
-const pageOK = k => !TH() || ['home', 'settings', 'p', 'setup', ''].includes(k) || (k === 'stats' ? can('stats') : can(k));
+const pageOK = k => ['acc', 'staff'].includes(k) ? DB.role === 'admin' : !TH() || ['home', 'settings', 'p', 'setup', ''].includes(k) || (k === 'stats' ? can('stats') : can(k));
 const PERM_LIST = [['appts', 'المواعيد'], ['patients', 'ملفات المرضى'], ['finance', 'المتابعة المالية'], ['stats', 'إحصائيات المعالجين'], ['library', 'مكتبة التمارين'], ['devices', 'الأجهزة والبروتوكولات'],
   ['phone', 'رؤية أرقام هواتف المرضى'], ['pay', 'تعديل الدفعات (ورؤية كل الملفات في المتابعة المالية)'], ['allAppts', 'إدارة مواعيد كل المعالجين (حجز/تعديل/حذف)'], ['delFiles', 'حذف ملفات المرضى'], ['bothSecs', 'الوصول للقسمين (النساء والرجال)'],
   ['editAll', 'تعديل ملفات كل المرضى'], ['editOwn', 'تعديل ملفات مرضاه فقط (المرتبطين به بموعد أو جلسة)'], ['createFiles', 'إضافة ملف طبي جديد'], ['prices', 'رؤية أسعار الجلسات والدفعات (عدد الجلسات والمبلغ المتبقي يبقيان ظاهرين)'], ['files', 'مشاهدة ورفع الصور والتقارير والملفات (حتى لو كان الملف للعرض فقط)']];
@@ -39,6 +39,7 @@ const canFiles = p => !TH() || can('files') || canEditP(p);
 const canEditP = p => !TH() || can('editAll') || (can('editOwn') && !!p && linkedTo(p, myTid(), myName()));
 /* الحالة المالية لكل ملف */
 function payState(p) {
+  if (p.cancelled) return { total: 0, paid: 0, remain: 0, pct: 0, status: 'cancelled' };
   if (hidePrices()) { const st = p._pstat || 'none'; return { total: 0, paid: 0, remain: 0, pct: num(p._remainPct), status: st }; }
   const total = totalOf(p), paid = paidOf(p);
   return { total, paid, remain: total - paid, pct: total ? Math.max(0, Math.round((total - paid) / total * 100)) : 0, status: !total ? 'none' : (paid >= total ? 'done' : 'due') };
@@ -48,6 +49,7 @@ function payBadge(p) {
   if (s.status === 'due') return TH() ? `<span class="pay-dot due" title="النسبة المتبقية من المبلغ المتفق عليه">● متبقي ${s.pct}%</span>`
     : `<span class="pay-dot due" title="متبقي ${fmt(s.remain)} من ${fmt(s.total)}">● متبقي ${fmt(s.remain)} (${s.pct}%)</span>`;
   if (s.status === 'done') return `<span class="pay-dot done" title="الدفعات مكتملة">● مكتمل الدفع</span>`;
+  if (s.status === 'cancelled') return `<span class="pay-dot cx" title="ألغى المريض العلاج">⛔ علاج ملغى</span>`;
   return '';
 }
 /* الجلسات المنفذة لمريض: من المواعيد (حضر) + أسطر الجلسات المكتوبة يدوياً */
@@ -128,7 +130,7 @@ function syncBadge() {
   return DB.online ? `<span class="sync on">● متزامن لحظياً</span>` : `<span class="sync wait">● بدون إنترنت — سيُرفع تلقائياً</span>`;
 }
 function shell(active, inner) {
-  const nav = [['home', 'الرئيسية'], ['appts', 'المواعيد'], ['patients', 'المرضى'], ['finance', 'المتابعة المالية']].concat(canStats() ? [['stats', 'إحصائيات المعالجين']] : [], [['library', 'مكتبة التمارين'], ['devices', 'الأجهزة والبروتوكولات'], ['settings', 'الإعدادات']])
+  const nav = [['home', 'الرئيسية'], ['appts', 'المواعيد'], ['patients', 'المرضى'], ['finance', 'المتابعة المالية']].concat(canStats() ? [['stats', 'إحصائيات المعالجين']] : [], [['library', 'مكتبة التمارين'], ['devices', 'الأجهزة والبروتوكولات']], DB.role === 'admin' ? [['acc', '💼 المحاسبة'], ['staff', '👥 الموظفون']] : [], [['settings', 'الإعدادات']])
     .filter(([k]) => !TH() || ['home', 'settings', 'stats'].includes(k) || can(k));
   return `<header class="topbar role-${secOf()}"><div class="topbar-in">
     <div class="brand" data-go="home"><b>Motion Life</b><small>مركز الأخصائي يزن جهاد العلواني</small></div>
@@ -153,6 +155,9 @@ function render() {
   else if (h[0] === 'patients') { app.innerHTML = shell('patients', patientsView()); bindPatients(); if (TH() && !can('createFiles') && $('#newP')) $('#newP').remove(); }
   else if (h[0] === 'finance') { app.innerHTML = shell('finance', financeView()); bindFinance(); }
   else if (h[0] === 'stats' && canStats()) { app.innerHTML = shell('stats', statsView(h[1])); bindStats(h[1]); }
+  else if (h[0] === 'acc') { app.innerHTML = shell('acc', accView(h[1], h[2], h[3])); bindAcc(h[1]); }
+  else if (h[0] === 'staff' && h[1]) { const S = DB.staffDocs.get(h[1]); if (S) { app.innerHTML = shell('staff', staffFileView(S, h[2])); bindStaffFile(S, h[2]); } else app.innerHTML = shell('staff', '<div class="empty">جارٍ التحميل... إذا لم يظهر فقد يكون الملف محذوفاً.</div>'); }
+  else if (h[0] === 'staff') { app.innerHTML = shell('staff', staffView()); bindStaff(); }
   else if (h[0] === 'library') { app.innerHTML = shell('library', libraryView()); bindLibrary(); }
   else if (h[0] === 'devices') { app.innerHTML = shell('devices', devicesView()); bindDevices(); }
   else if (h[0] === 'settings') { app.innerHTML = shell('settings', settingsView()); bindSettings(); }
@@ -281,7 +286,7 @@ function alertsHTML(p) {
   if (p.iq_allergy === 'نعم') c.push('حساسية');
   if (arrOf(p, 'iq_hx').includes('سرطان')) c.push('سرطان');
   if (c.length) a.push(`<b>ℹ️ انتبه قبل استخدام الأجهزة:</b> ${c.map(esc).join('، ')}`);
-  return `<div id="alerts">${a.map((x, i) => `<div class="alert ${i === 0 && redFlags(p).length ? 'red' : 'amber'}">${x}</div>`).join('')}</div>`;
+  return `<div id="alerts">${noticesHTML(p)}${a.map((x, i) => `<div class="alert ${i === 0 && redFlags(p).length ? 'red' : 'amber'}">${x}</div>`).join('')}</div>`;
 }
 /* تحذيرات مهمة في صفحة الخطة العلاجية حسب الاستبيان */
 function risksOf(p) {
@@ -1311,6 +1316,260 @@ function bindStats(per) {
   draw(); liveRedraw = draw;
 }
 
+/* ---------- المحاسبة (للإدارة فقط) ---------- */
+const IN_CATS = ['استشارات علاجية — د. يزن', 'مقبوضات أخرى'];
+const OUT_CATS = ['رواتب', 'سلف', 'مصاريف استهلاكية', 'مرتجعات للمرضى', 'مصاريف أخرى'];
+const PAT_CAT = 'دفعات المرضى';
+const isAdmin = () => DB.role === 'admin';
+const mOf = d => String(d || '').slice(0, 7);
+const inRange = (d, f, t) => !!d && d >= f && d <= t;
+const ledgerAll = () => [...DB.ledger.values()];
+const staffAll = () => [...DB.staffDocs.values()].sort((a, b) => (a.section || 'z').localeCompare(b.section || 'z') || (a.name || '').localeCompare(b.name || ''));
+/* دفعات المرضى من ملفاتهم (الدفعات + مبالغ الجلسات) */
+function patientPayRows() {
+  const R = [];
+  allP().forEach(p => {
+    (p.payments || []).forEach((x, i) => { if (num(x.amount) && x.date) R.push({ id: 'pp' + p.id + i, date: x.date, kind: 'in', cat: PAT_CAT, amount: num(x.amount), desc: `${p.name || 'بدون اسم'} — ملف ${p.fileNo} — الدفعة ${i + 1}`, pid: p.id, auto: true }); });
+    if (p.payMode === 'session') (p.sessions || []).forEach((x, i) => { if (num(x.amount) && x.date) R.push({ id: 'ps' + p.id + i, date: x.date, kind: 'in', cat: PAT_CAT, amount: num(x.amount), desc: `${p.name || 'بدون اسم'} — ملف ${p.fileNo} — الجلسة ${i + 1}`, pid: p.id, auto: true }); });
+  });
+  return R;
+}
+function ledgerDesc(e) {
+  const st = e.staffId && DB.staffDocs.get(e.staffId), p = e.pid && getP(e.pid);
+  return [st ? st.name : '', p ? `${p.name} — ملف ${p.fileNo}` : '', e.note || ''].filter(Boolean).join(' — ');
+}
+function accRange(per, f, t) {
+  const T = today();
+  if (per === 'yesterday') { const y = addDays(T, -1); return [y, y]; }
+  if (per === 'week') return [addDays(T, -6), T];
+  if (per === 'month') return [T.slice(0, 8) + '01', T];
+  if (per === 'custom' && f && t) return [f, t];
+  return [T, T];
+}
+const ACC_PER = [['today', 'اليوم'], ['yesterday', 'أمس'], ['week', 'آخر 7 أيام'], ['month', 'هذا الشهر'], ['custom', 'فترة مخصصة']];
+function accView(per, f, t) {
+  per = ACC_PER.some(x => x[0] === per) ? per : 'today';
+  const [from, to] = accRange(per, f, t);
+  return `<div class="row"><h2 style="margin:0;color:var(--navy)">💼 المحاسبة</h2><span class="spacer"></span>
+    <button class="btn" id="addIn">➕ مقبوض جديد</button><button class="btn danger-l" id="addOut">➖ مدفوع جديد</button></div>
+    <div class="chips">${ACC_PER.map(([k, x]) => `<button class="chip ${k === per ? 'on' : ''}" data-per="${k}">${x}</button>`).join('')}</div>
+    <div class="row" id="accCustom" style="${per === 'custom' ? '' : 'display:none'};gap:8px"><span class="lbl">من</span><input type="date" id="accF" value="${from}"><span class="lbl">إلى</span><input type="date" id="accT" value="${to}"><button class="btn sm" id="accGo">عرض</button></div>
+    <div id="accBody" data-from="${from}" data-to="${to}"></div>`;
+}
+function bindAcc(per) {
+  const body = $('#accBody');
+  $$('[data-per]').forEach(b => b.onclick = () => { if (b.dataset.per === 'custom') { $('#accCustom').style.display = ''; return; } go('acc/' + b.dataset.per); });
+  $('#accGo').onclick = () => { const f = $('#accF').value, t = $('#accT').value; if (!f || !t) return toast('اختر التاريخين'); go(`acc/custom/${f}/${t}`); };
+  $('#addIn').onclick = () => ledgerModal({ kind: 'in' });
+  $('#addOut').onclick = () => ledgerModal({ kind: 'out' });
+  const draw = () => {
+    const from = body.dataset.from, to = body.dataset.to;
+    const rows = patientPayRows().concat(ledgerAll().map(e => Object.assign({}, e, { amount: num(e.amount), desc: ledgerDesc(e) }))).filter(r => inRange(r.date, from, to))
+      .sort((a, b) => (b.date || '').localeCompare(a.date || '') || (b.at || '').localeCompare(a.at || ''));
+    const sum = fn => rows.filter(fn).reduce((s, r) => s + r.amount, 0);
+    const pin = sum(r => r.cat === PAT_CAT), oin = sum(r => r.kind === 'in' && r.cat !== PAT_CAT), out = sum(r => r.kind === 'out');
+    const cats = {}; rows.forEach(r => { const k = (r.kind === 'in' ? '+' : '−') + r.cat; cats[k] = (cats[k] || 0) + r.amount; });
+    body.innerHTML = `<p class="hint">الفترة: ${from === to ? from + ' (' + (DAYS[new Date(from + 'T12:00:00').getDay()] || '') + ')' : from + ' ← ' + to}</p>
+      <div class="accsum">
+        <div class="acc-c in"><span>دفعات المرضى</span><b>${fmt(pin)}</b></div>
+        <div class="acc-c in"><span>مقبوضات أخرى</span><b>${fmt(oin)}</b></div>
+        <div class="acc-c in t"><span>إجمالي المقبوضات</span><b>${fmt(pin + oin)}</b></div>
+        <div class="acc-c out t"><span>إجمالي المدفوعات</span><b>${fmt(out)}</b></div>
+        <div class="acc-c net ${pin + oin - out < 0 ? 'neg' : ''}"><span>الصافي</span><b>${fmt(pin + oin - out)}</b></div>
+      </div>
+      ${Object.keys(cats).length ? `<div class="acc-cats">${Object.entries(cats).map(([k, v]) => `<span class="acc-cat ${k[0] === '+' ? 'in' : 'out'}">${esc(k.slice(1))}: <b>${fmt(v)}</b></span>`).join('')}</div>` : ''}
+      ${rows.length ? `<div class="fin-tbl"><table class="slog acc"><thead><tr><th>التاريخ</th><th>النوع</th><th>البند</th><th>التفاصيل</th><th>المبلغ</th><th>سجّله</th><th></th></tr></thead><tbody>
+        ${rows.map(r => `<tr class="${r.kind}"><td>${esc(r.date)}</td><td>${r.kind === 'in' ? '<span class="kin">مقبوض</span>' : '<span class="kout">مدفوع</span>'}</td><td>${esc(r.cat)}</td>
+          <td>${r.pid ? `<a href="#p/${r.pid}/2">${esc(r.desc)}</a>` : r.staffId ? `<a href="#staff/${r.staffId}">${esc(r.desc)}</a>` : esc(r.desc)}</td>
+          <td class="amt">${r.kind === 'in' ? '+' : '−'}${fmt(r.amount)}</td><td>${esc(r.by || (r.auto ? 'ملف المريض' : ''))}</td>
+          <td style="white-space:nowrap">${r.auto ? '' : `<button class="btn light sm" data-led="${r.id}">تعديل</button><button class="x" data-ldel="${r.id}" title="حذف">×</button>`}</td></tr>`).join('')}</tbody></table></div>`
+        : '<div class="empty">لا توجد حركات مالية في هذه الفترة.</div>'}`;
+    $$('[data-led]', body).forEach(b => b.onclick = () => ledgerModal(DB.ledger.get(b.dataset.led)));
+    $$('[data-ldel]', body).forEach(b => b.onclick = () => confirmDel('حذف هذه الحركة المالية؟', () => { const e = DB.ledger.get(b.dataset.ldel); if (e) { unlinkRefund(e); DB.deleteAdm('ledger', e); } draw(); toast('تم الحذف'); }));
+  };
+  draw(); liveRedraw = draw;
+}
+/* إضافة / تعديل حركة مالية */
+function ledgerModal(e0) {
+  const isNew = !e0.id;
+  const e = Object.assign({ date: today(), kind: 'in', cat: '', amount: '', note: '', staffId: '', pid: '', cancel: false }, e0);
+  const cats = e.kind === 'in' ? IN_CATS : OUT_CATS; if (!e.cat) e.cat = cats[0];
+  const pts = allP().sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+  openModal(`<div class="modal-h"><h3>${e.kind === 'in' ? '➕ مقبوض' : '➖ مدفوع'} ${isNew ? 'جديد' : '— تعديل'}</h3><span class="spacer"></span><button class="x" id="mc">×</button></div>
+    <div class="pform">
+      <div class="fcol"><span class="lbl">التاريخ</span><input type="date" id="lD" value="${esc(e.date)}"></div>
+      <div class="fcol"><span class="lbl">البند</span><select id="lC" class="sel">${cats.map(c => `<option ${c === e.cat ? 'selected' : ''}>${esc(c)}</option>`).join('')}</select></div>
+      <div class="fcol"><span class="lbl">المبلغ</span><input id="lA" value="${esc(e.amount)}" inputmode="numeric"></div>
+      <div class="fcol" id="lStaffW"><span class="lbl">الموظف / المعالج</span><select id="lS" class="sel"><option value="">— اختر —</option>${staffAll().map(s => `<option value="${s.id}" ${s.id === e.staffId ? 'selected' : ''}>${esc(s.name)}${s.job ? ' — ' + esc(s.job) : ''}</option>`).join('')}</select></div>
+      <div class="fcol" id="lPatW" style="grid-column:1/-1"><span class="lbl">المريض</span><input id="lPq" placeholder="🔍 اكتب للبحث عن المريض" class="search" style="padding:8px 12px">
+        <select id="lP" class="sel" size="5" style="width:100%;margin-top:6px">${pts.map(p => `<option value="${p.id}" ${p.id === e.pid ? 'selected' : ''}>${esc(p.name || 'بدون اسم')} — ملف ${esc(p.fileNo)} — ${SEC[p.section] || ''}</option>`).join('')}</select>
+        <label class="chk" style="margin-top:6px"><input type="checkbox" id="lX" ${e.cancel ? 'checked' : ''}>المريض ألغى العلاج (يُوقف ملفه من المتابعة المالية ويظهر إشعار في ملفه)</label></div>
+      <div class="fcol" style="grid-column:1/-1"><span class="lbl" id="lNl">ملاحظة / السبب</span><input id="lN" value="${esc(e.note)}"></div>
+    </div>
+    <div class="modal-f"><button class="btn big" id="ok">✓ حفظ</button><button class="btn ghost" id="cn">إلغاء</button></div>`);
+  const sync = () => { const c = $('#lC').value; $('#lStaffW').style.display = ['رواتب', 'سلف'].includes(c) ? '' : 'none'; $('#lPatW').style.display = c === 'مرتجعات للمرضى' ? '' : 'none'; };
+  $('#lC').onchange = sync; sync();
+  $('#lPq').oninput = () => { const q = $('#lPq').value.trim(); $$('#lP option').forEach(o => { o.hidden = !!q && !o.textContent.includes(q); }); };
+  $('#mc').onclick = $('#cn').onclick = closeModal;
+  $('#ok').onclick = () => {
+    const cat = $('#lC').value, amount = $('#lA').value.trim();
+    if (!num(amount)) return toast('اكتب المبلغ');
+    const staffId = ['رواتب', 'سلف'].includes(cat) ? $('#lS').value : '', pid = cat === 'مرتجعات للمرضى' ? $('#lP').value : '';
+    if (['رواتب', 'سلف'].includes(cat) && !staffId) return toast('اختر الموظف');
+    if (cat === 'مرتجعات للمرضى' && !pid) return toast('اختر المريض');
+    const o = Object.assign({}, e0, { id: e.id || uid('L'), date: $('#lD').value || today(), kind: e.kind, cat, amount, staffId, pid, note: $('#lN').value.trim(), cancel: cat === 'مرتجعات للمرضى' && $('#lX').checked,
+      by: e.by || DB.label(), at: e.at || new Date().toISOString() });
+    if (e0.id) unlinkRefund(e0, true);
+    DB.saveAdm('ledger', o);
+    if (o.cat === 'مرتجعات للمرضى') linkRefund(o);
+    closeModal(); toast('تم الحفظ'); if (liveRedraw) liveRedraw();
+  };
+}
+/* المرتجعات: إشعار في ملف المريض */
+function linkRefund(o) {
+  const p = getP(o.pid); if (!p) return;
+  p.notices = (p.notices || []).filter(n => n.lid !== o.id);
+  p.notices.push({ lid: o.id, type: 'refund', date: o.date, amount: o.amount, reason: o.note || '', cancel: !!o.cancel, by: o.by });
+  const keys = ['notices']; if (o.cancel) { p.cancelled = true; keys.push('cancelled'); }
+  DB.savePatient(p, keys);
+}
+function unlinkRefund(e, keepCancel) {
+  if (e.cat !== 'مرتجعات للمرضى' || !e.pid) return;
+  const p = getP(e.pid); if (!p || !(p.notices || []).some(n => n.lid === e.id)) return;
+  p.notices = p.notices.filter(n => n.lid !== e.id); const keys = ['notices'];
+  if (!keepCancel && p.cancelled && !p.notices.some(n => n.cancel)) { p.cancelled = false; keys.push('cancelled'); }
+  DB.savePatient(p, keys);
+}
+document.addEventListener('click', e => { if (e.target.id === 'reactP' && curP && isAdmin()) { curP.cancelled = false; DB.savePatient(curP, ['cancelled']); render(); toast('تم إعادة تفعيل الملف'); } });
+function noticesHTML(p) {
+  const N = p.notices || []; if (!N.length && !p.cancelled) return '';
+  return N.map(n => `<div class="alert red">🔔 <b>${n.cancel ? 'ألغى المريض العلاج' : 'مرتجع للمريض'}</b> بتاريخ ${esc(n.date || '')}${!TH() && n.amount ? ' — تم إرجاع مبلغ <b>' + fmt(num(n.amount)) + '</b>' : ' — تم إرجاع مبلغ للمريض'}${n.reason ? ' — السبب: ' + esc(n.reason) : ''}</div>`).join('')
+    + (p.cancelled ? `<div class="alert amber">⛔ هذا الملف موقوف (العلاج ملغى) ولا يظهر في المتابعة المالية.${isAdmin() ? ' <button class="btn light sm" id="reactP" type="button">↺ إعادة تفعيل الملف</button>' : ''}</div>` : '');
+}
+
+/* ---------- ملفات المعالجين والموظفين (للإدارة فقط) ---------- */
+const sid = (sec, tid) => 'st_' + sec + '_' + tid;
+function ensureStaff() {
+  ['women', 'men'].forEach(sec => therapists(sec).forEach(t => {
+    if ([...DB.staffDocs.values()].some(s => s.section === sec && s.tid === t.id)) return;
+    DB.saveAdm('staff', { id: sid(sec, t.id), name: t.name, job: sec === 'women' ? 'معالجة فيزيائية' : 'معالج فيزيائي', section: sec, tid: t.id, phone: '', salary: '', start: '', notes: '', adj: [], leaves: [] });
+  }));
+}
+const weekStart = d => { const x = new Date(d + 'T12:00:00'); return addDays(d, -((x.getDay() + 1) % 7)); };   // الأسبوع يبدأ السبت
+function staffTher(s) { return s.tid && s.section ? therapists(s.section).find(t => t.id === s.tid) || { id: s.tid, name: s.name, color: '#8a9aa6' } : null; }
+function staffAppts(s, from, to) { const t = staffTher(s); if (!t) return []; return [...DB.appts.values()].filter(a => a.section === s.section && a.date >= from && a.date <= to && a.status !== 'cancelled' && (a.tid === t.id || (!a.tid && a.by === t.name))); }
+function staffPatients(s) { const t = staffTher(s); if (!t) return []; return allP().filter(p => p.section === s.section && linkedTo(p, t.id, t.name)); }
+function leaveDays(l, m) {   // أيام الإجازة الواقعة ضمن الشهر m (أو كلها)
+  if (!l.from) return 0; const to = l.to && l.to >= l.from ? l.to : l.from; let n = 0;
+  for (let d = l.from; d <= to; d = addDays(d, 1)) { if (!m || mOf(d) === m) n++; if (n > 400) break; } return n;
+}
+function payroll(s, m) {
+  const sal = num(s.salary), adj = (s.adj || []).filter(x => mOf(x.date) === m);
+  const bonus = adj.filter(x => x.type === 'مكافأة').reduce((a, x) => a + num(x.amount), 0);
+  const ded = adj.filter(x => x.type === 'خصم').reduce((a, x) => a + num(x.amount), 0);
+  const L = ledgerAll().filter(e => e.staffId === s.id && mOf(e.date) === m);
+  const adv = L.filter(e => e.cat === 'سلف').reduce((a, e) => a + num(e.amount), 0);
+  const paid = L.filter(e => e.cat === 'رواتب').reduce((a, e) => a + num(e.amount), 0);
+  const unpaidDays = (s.leaves || []).filter(l => !l.paid).reduce((a, l) => a + leaveDays(l, m), 0);
+  const paidDays = (s.leaves || []).filter(l => l.paid).reduce((a, l) => a + leaveDays(l, m), 0);
+  const leaveDed = sal && unpaidDays ? Math.round(sal / 30 * unpaidDays) : 0;
+  const due = sal + bonus - ded - leaveDed - adv;
+  return { sal, bonus, ded, adv, paid, unpaidDays, paidDays, leaveDed, due, rest: due - paid, adj, L };
+}
+function staffView() {
+  return `<div class="row"><h2 style="margin:0;color:var(--navy)">👥 المعالجون والموظفون</h2><span class="spacer"></span><button class="btn" id="newSt">➕ موظف جديد</button></div>
+    <p class="hint">ملف لكل معالج وموظف: البيانات والراتب والسلف والخصومات والمكافآت والإجازات، والمرضى والجلسات من جدول المواعيد. خاص بالإدارة.</p><div id="stList" class="stgrid"></div>`;
+}
+function bindStaff() {
+  ensureStaff();
+  const draw = () => {
+    const T = today(), m = mOf(T), ws = weekStart(T);
+    $('#stList').innerHTML = staffAll().map(s => { const t = staffTher(s), pr = payroll(s, m);
+      return `<div class="stcard st-file" data-sf="${s.id}" style="--c:${t ? t.color : '#5f7180'}"><div class="sth"><span class="dot" style="background:${t ? t.color : '#5f7180'}"></span><b>${esc(s.name)}</b><span class="spacer"></span>${s.section ? `<span class="badge sec-${s.section}">${SEC[s.section]}</span>` : ''}</div>
+        <div class="hint">${esc(s.job || '')}${s.phone ? ' · ' + esc(s.phone) : ''}</div>
+        <div class="stmini">${t ? `<span>المرضى: <b>${staffPatients(s).length}</b></span><span>جلسات الأسبوع: <b>${staffAppts(s, ws, addDays(ws, 6)).length}</b></span><span>جلسات الشهر: <b>${staffAppts(s, m + '-01', m + '-31').length}</b></span>` : ''}
+          <span>الراتب: <b>${pr.sal ? fmt(pr.sal) : '—'}</b></span>${pr.sal || pr.adv || pr.paid ? `<span>المتبقي هذا الشهر: <b class="${pr.rest > 0 ? 'rem-red' : ''}">${fmt(pr.rest)}</b></span>` : ''}</div></div>`; }).join('') || '<div class="empty">لا يوجد موظفون بعد.</div>';
+    $$('[data-sf]').forEach(c => c.onclick = () => go('staff/' + c.dataset.sf));
+  };
+  $('#newSt').onclick = () => { const s = { id: uid('st'), name: 'موظف جديد', job: '', section: '', tid: '', phone: '', salary: '', start: today(), notes: '', adj: [], leaves: [] }; DB.saveAdm('staff', s); go('staff/' + s.id); };
+  draw(); liveRedraw = draw;
+}
+function staffFileView(s, m) {
+  m = /^\d{4}-\d{2}$/.test(m || '') ? m : mOf(today());
+  const t = staffTher(s);
+  const f = (k, label, type = 'text') => `<div class="f"><label>${label}:</label><input data-sk="${k}" type="${type}" value="${esc(s[k] || '')}" ${type === 'text' && k === 'salary' ? 'inputmode="numeric"' : ''}></div>`;
+  return `<div class="row"><button class="btn ghost sm" data-go="staff">→ كل الموظفين</button><span class="spacer"></span><span class="saved" id="ssv"></span>${s.tid ? '' : '<button class="btn danger sm" id="delSt">حذف الملف</button>'}</div>
+  <div class="sheet"><div class="sth" style="margin-bottom:10px"><span class="dot" style="background:${t ? t.color : '#5f7180'};width:16px;height:16px"></span><h2 style="margin:0;color:var(--navy)">${esc(s.name)}</h2>${s.section ? `<span class="badge sec-${s.section}">${SEC[s.section]}</span>` : ''}</div>
+    <div class="grid3">${f('name', 'الاسم')}${f('job', 'العمل / الوظيفة')}${f('phone', 'رقم الهاتف', 'tel')}${f('salary', 'الراتب الشهري')}${f('start', 'تاريخ بدء العمل', 'date')}${f('notes', 'ملاحظات')}</div></div>
+  <div class="sheet"><div class="row"><h3 style="margin:0;color:var(--navy)">💵 الحساب الشهري</h3><span class="spacer"></span><span class="lbl">الشهر:</span><input type="month" id="stM" value="${m}"></div>
+    <div id="stPay"></div>
+    <div class="row" style="margin-top:10px"><button class="btn sm" id="addAdj">➕ مكافأة / خصم</button><button class="btn sm" id="addAdv">➕ سلفة</button><button class="btn sm" id="addSal">💵 صرف راتب</button><button class="btn sm light" id="addLv">🌴 إجازة</button></div>
+    <div id="stLists"></div></div>
+  ${t ? `<div class="sheet"><h3 style="margin-top:0;color:var(--navy)">🗓️ الجلسات والمرضى</h3><div id="stWork"></div></div>` : ''}`;
+}
+function bindStaffFile(s, m) {
+  m = /^\d{4}-\d{2}$/.test(m || '') ? m : mOf(today());
+  let tm;
+  $$('[data-sk]').forEach(el => el.addEventListener('input', () => { s[el.dataset.sk] = el.value; $('#ssv').textContent = '...'; clearTimeout(tm);
+    tm = setTimeout(() => { DB.saveAdm('staff', s); $('#ssv').textContent = '✓ تم الحفظ'; if (el.dataset.sk === 'salary') draw(); }, 500); }));
+  $('#stM').onchange = () => { if ($('#stM').value) go('staff/' + s.id + '/' + $('#stM').value); };
+  if ($('#delSt')) $('#delSt').onclick = () => confirmDel('حذف ملف ' + s.name + '؟', () => { DB.deleteAdm('staff', s); go('staff'); });
+  const save = () => { DB.saveAdm('staff', s); draw(); };
+  $('#addAdj').onclick = () => { openModal(`<div class="modal-h"><h3>مكافأة / خصم — ${esc(s.name)}</h3><span class="spacer"></span><button class="x" id="mc">×</button></div>
+      <div class="pform"><div class="fcol"><span class="lbl">النوع</span><select id="aT" class="sel"><option>مكافأة</option><option>خصم</option></select></div>
+      <div class="fcol"><span class="lbl">التاريخ</span><input type="date" id="aD" value="${m === mOf(today()) ? today() : m + '-01'}"></div>
+      <div class="fcol"><span class="lbl">المبلغ</span><input id="aA" inputmode="numeric"></div>
+      <div class="fcol" style="grid-column:1/-1"><span class="lbl">السبب</span><input id="aR"></div></div>
+      <div class="modal-f"><button class="btn big" id="ok">✓ حفظ</button><button class="btn ghost" id="cn">إلغاء</button></div>`);
+    $('#mc').onclick = $('#cn').onclick = closeModal;
+    $('#ok').onclick = () => { if (!num($('#aA').value)) return toast('اكتب المبلغ'); if (!$('#aR').value.trim()) return toast('اكتب السبب');
+      s.adj = s.adj || []; s.adj.push({ id: uid('j'), type: $('#aT').value, date: $('#aD').value || today(), amount: $('#aA').value.trim(), reason: $('#aR').value.trim(), by: DB.label() }); closeModal(); save(); toast('تم الحفظ'); }; };
+  $('#addLv').onclick = () => { openModal(`<div class="modal-h"><h3>🌴 إجازة — ${esc(s.name)}</h3><span class="spacer"></span><button class="x" id="mc">×</button></div>
+      <div class="pform"><div class="fcol"><span class="lbl">من تاريخ</span><input type="date" id="vF" value="${today()}"></div><div class="fcol"><span class="lbl">إلى تاريخ</span><input type="date" id="vT" value="${today()}"></div>
+      <div class="fcol"><span class="lbl">نوع الإجازة</span><select id="vP" class="sel"><option value="1">مأجورة</option><option value="0">غير مأجورة (تُخصم من الراتب)</option></select></div>
+      <div class="fcol"><span class="lbl">السبب</span><input id="vR"></div></div>
+      <div class="modal-f"><button class="btn big" id="ok">✓ حفظ</button><button class="btn ghost" id="cn">إلغاء</button></div>`);
+    $('#mc').onclick = $('#cn').onclick = closeModal;
+    $('#ok').onclick = () => { const fr = $('#vF').value, to = $('#vT').value || fr; if (!fr || to < fr) return toast('تحقق من التاريخين');
+      s.leaves = s.leaves || []; s.leaves.push({ id: uid('v'), from: fr, to, paid: $('#vP').value === '1', reason: $('#vR').value.trim(), by: DB.label() }); closeModal(); save(); toast('تم حفظ الإجازة'); }; };
+  $('#addAdv').onclick = () => ledgerModal({ kind: 'out', cat: 'سلف', staffId: s.id, date: m === mOf(today()) ? today() : m + '-01' });
+  $('#addSal').onclick = () => { const pr = payroll(s, m); ledgerModal({ kind: 'out', cat: 'رواتب', staffId: s.id, amount: pr.rest > 0 ? String(pr.rest) : '', note: 'راتب شهر ' + m, date: m === mOf(today()) ? today() : m + '-28' }); };
+  function draw() {
+    const pr = payroll(s, m), row = (l, v, c) => `<tr class="${c || ''}"><td>${l}</td><td class="amt">${v}</td></tr>`;
+    $('#stPay').innerHTML = `<table class="slog paytbl"><tbody>
+      ${row('الراتب الأساسي', pr.sal ? fmt(pr.sal) : '— (اكتب الراتب في الأعلى)')}
+      ${row('+ المكافآت', fmt(pr.bonus), 'in')}${row('− الخصومات', fmt(pr.ded), 'out')}
+      ${row(`− خصم الإجازات غير المأجورة (${pr.unpaidDays} يوم × الراتب ÷ 30)`, fmt(pr.leaveDed), 'out')}
+      ${row('− السلف', fmt(pr.adv), 'out')}${row('= المستحق', fmt(pr.due), 'tot')}
+      ${row('− المصروف من الراتب', fmt(pr.paid), 'out')}${row('= المتبقي للدفع', `<b class="${pr.rest > 0 ? 'rem-red' : 'ok-green'}">${fmt(pr.rest)}</b>`, 'tot')}</tbody></table>
+      <p class="hint">إجازات هذا الشهر: مأجورة ${pr.paidDays} يوم · غير مأجورة ${pr.unpaidDays} يوم</p>`;
+    const adjRows = pr.adj.map(x => `<tr><td>${esc(x.date)}</td><td>${x.type === 'مكافأة' ? '<span class="kin">مكافأة</span>' : '<span class="kout">خصم</span>'}</td><td class="amt">${fmt(num(x.amount))}</td><td>${esc(x.reason || '')}</td><td><button class="x" data-dadj="${x.id}">×</button></td></tr>`).join('');
+    const ledRows = pr.L.map(e => `<tr><td>${esc(e.date)}</td><td>${e.cat === 'سلف' ? '<span class="kout">سلفة</span>' : '<span class="kout">راتب</span>'}</td><td class="amt">${fmt(num(e.amount))}</td><td>${esc(e.note || '')}</td><td><button class="btn light sm" data-led="${e.id}">تعديل</button></td></tr>`).join('');
+    const lv = (s.leaves || []).filter(l => leaveDays(l, m) > 0);
+    $('#stLists').innerHTML = `<div class="lbl" style="margin:14px 0 4px">المكافآت والخصومات والسلف والرواتب — ${m}</div>
+      ${adjRows || ledRows ? `<table class="slog"><thead><tr><th>التاريخ</th><th>النوع</th><th>المبلغ</th><th>السبب / ملاحظة</th><th></th></tr></thead><tbody>${adjRows}${ledRows}</tbody></table>` : '<div class="empty" style="padding:8px">لا يوجد في هذا الشهر.</div>'}
+      <div class="lbl" style="margin:14px 0 4px">الإجازات — ${m}</div>
+      ${lv.length ? `<table class="slog"><thead><tr><th>من</th><th>إلى</th><th>الأيام</th><th>النوع</th><th>السبب</th><th></th></tr></thead><tbody>${lv.map(l => `<tr><td>${esc(l.from)}</td><td>${esc(l.to)}</td><td>${leaveDays(l)}</td><td>${l.paid ? '<span class="kin">مأجورة</span>' : '<span class="kout">غير مأجورة</span>'}</td><td>${esc(l.reason || '')}</td><td><button class="x" data-dlv="${l.id}">×</button></td></tr>`).join('')}</tbody></table>` : '<div class="empty" style="padding:8px">لا توجد إجازات في هذا الشهر.</div>'}`;
+    $$('[data-dadj]').forEach(b => b.onclick = () => confirmDel('حذف هذا البند؟', () => { s.adj = s.adj.filter(x => x.id !== b.dataset.dadj); save(); }));
+    $$('[data-dlv]').forEach(b => b.onclick = () => confirmDel('حذف هذه الإجازة؟', () => { s.leaves = s.leaves.filter(x => x.id !== b.dataset.dlv); save(); }));
+    $$('#stLists [data-led]').forEach(b => b.onclick = () => ledgerModal(DB.ledger.get(b.dataset.led)));
+    if ($('#stWork')) {
+      const T = today(), ws = weekStart(T), we = addDays(ws, 6), mf = m + '-01', mt = m + '-31';
+      const wk = staffAppts(s, ws, we), mo = staffAppts(s, mf, mt), P = staffPatients(s), own = P.filter(p => p.ownerTid === s.tid);
+      const done = L => L.filter(a => a.status === 'done').length;
+      $('#stWork').innerHTML = `<div class="accsum">
+        <div class="acc-c"><span>جلسات هذا الأسبوع (${ws} ← ${we})</span><b>${wk.length}</b><small>منها حضر: ${done(wk)}</small></div>
+        <div class="acc-c"><span>جلسات شهر ${m}</span><b>${mo.length}</b><small>منها حضر: ${done(mo)}</small></div>
+        <div class="acc-c"><span>المرضى المرتبطون</span><b>${P.length}</b><small>مسؤول عن ${own.length}</small></div></div>
+        <div class="lbl" style="margin:10px 0 4px">ملفات المرضى المرتبطين:</div>
+        <div class="stcur">${P.map(p => `<button class="chip" data-open="${p.id}">${p.ownerTid === s.tid ? '★ ' : ''}${esc(p.name || 'بدون اسم')} <small>ملف ${esc(p.fileNo)}</small></button>`).join('') || '<span class="hint">لا يوجد</span>'}</div>
+        <p class="hint">★ = المعالج المسؤول عن الحالة. الجلسات محسوبة من جدول المواعيد (بدون الملغاة)، والأسبوع يبدأ يوم السبت.</p>`;
+      $$('#stWork [data-open]').forEach(b => b.onclick = () => go('p/' + b.dataset.open + '/1'));
+    }
+  }
+  draw(); liveRedraw = draw;
+}
+
 /* ---------- settings ---------- */
 function settingsView() {
   if (TH()) return `<h2 style="margin:0 0 14px;color:var(--navy)">الإعدادات</h2>
@@ -1572,7 +1831,7 @@ DB.on((kind, info) => {
     if (info.remote && info.ids && info.ids.includes(id) && livePatient && livePatient.id === id) livePatient.apply();
     return;
   }
-  if (['patients', 'appts', 'settings', 'finance', 'stats'].includes(current) && liveRedraw) return softRedraw(() => liveRedraw && liveRedraw());
+  if (['patients', 'appts', 'settings', 'finance', 'stats', 'acc', 'staff'].includes(current) && liveRedraw) return softRedraw(() => liveRedraw && liveRedraw());
   if (current === 'home') softRedraw(() => { if (current === 'home' && $('#modal').classList.contains('hidden')) render(); });
 });
 setInterval(() => { if (current === 'appts' && liveRedraw && $('#modal').classList.contains('hidden')) liveRedraw(); }, 60000);

@@ -32,6 +32,9 @@ if (!db) {
   db = (bk && readJSON(path.join(BACKUPS, bk), null)) || {};
 }
 SECS.forEach(s => { db[s] = db[s] || {}; COLLS.forEach(c => { db[s][c] = db[s][c] || {}; }); });
+/* بيانات الإدارة فقط: المحاسبة وملفات الموظفين */
+const ADM_COLLS = ['ledger', 'staff'];
+db.admin = db.admin || {}; ADM_COLLS.forEach(c => { db.admin[c] = db.admin[c] || {}; });
 let saveT = null;
 function persist() {
   clearTimeout(saveT);
@@ -87,7 +90,7 @@ const auth = req => { const h = req.headers.authorization || ''; const t = h.sta
   if (!t || !sessions[t]) return null; const u = sessions[t].user || sessions[t].role; const v = users[u]; if (!v) return null;
   const role = roleOf(u);
   return { token: t, user: u, role, section: v.section || (SECS.includes(u) ? u : null), tid: v.tid || null, name: v.name || '', perms: role === 'therapist' ? permsOf(v) : null }; };
-const allowed = (a, sec) => a.role === 'admin' || a.section === sec || (a.role === 'therapist' && a.perms.bothSecs && SECS.includes(sec));
+const allowed = (a, sec) => sec === 'admin' ? a.role === 'admin' : a.role === 'admin' || a.section === sec || (a.role === 'therapist' && a.perms.bothSecs && SECS.includes(sec));
 const isManager = a => a.role === 'admin' || a.role === 'women' || a.role === 'men';
 const meOf = a => ({ user: a.user, role: a.role, section: a.section, tid: a.tid, name: a.name, perms: a.perms || undefined });
 /* ما يراه المعالج: بدون أرقام هواتف المرضى */
@@ -107,6 +110,7 @@ function viewDoc(a, coll, doc) {
   if (!P.prices) {
     if (coll === 'appts') delete d.amount;
     else { const s = payStat(doc); d._remainPct = s.total ? Math.max(0, Math.round(s.remain / s.total * 100)) : 0; d._pstat = s.st; delete d.sessionPrice; delete d.agreedTotal; delete d.payments;
+      if (Array.isArray(d.notices)) d.notices = d.notices.map(n => { const x = Object.assign({}, n); delete x.amount; return x; });
       if (Array.isArray(d.sessions)) d.sessions = d.sessions.map(r => { if (!r || typeof r !== 'object') return r; const x = Object.assign({}, r); delete x.amount; return x; }); }
   }
   return d;
@@ -253,7 +257,7 @@ async function api(req, res, url) {
     return send(res, 400, { error: 'action' });
   }
   if (p === '/api/data') {
-    const out = {}; SECS.forEach(s => { if (allowed(a, s)) out[s] = viewSection(a, s); });
+    const out = {}; SECS.forEach(s => { if (allowed(a, s)) out[s] = viewSection(a, s); }); if (a.role === 'admin') out.admin = db.admin;
     return send(res, 200, { data: out, time: Date.now(), seq, me: meOf(a) });
   }
   if (p === '/api/changes') {
@@ -300,7 +304,7 @@ async function api(req, res, url) {
   const m = p.match(/^\/api\/doc\/(\w+)\/(\w+)\/([\w-]+)$/);
   if (m) {
     const [, sec, coll, id] = m;
-    if (!SECS.includes(sec) || !COLLS.includes(coll)) return send(res, 400, { error: 'path' });
+    if (sec === 'admin' ? !ADM_COLLS.includes(coll) : (!SECS.includes(sec) || !COLLS.includes(coll))) return send(res, 400, { error: 'path' });
     if (!allowed(a, sec)) return send(res, 403, { error: 'forbidden' });
     const store = db[sec][coll], ex = store[id], th = a.role === 'therapist', P = a.perms || {};
     const limAppt = th && !P.allAppts, lockPay = th && (!P.pay || !P.prices), hidePhone = th && !P.phone;
