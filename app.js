@@ -61,8 +61,22 @@ function sessionsOf(p) {
     const t = therapists(p.section).find(x => x.name === r.by); out.push({ date: r.date, time: '', by: r.by || '', tid: t ? t.id : '', no: String(i + 1), src: 'file' }); });
   return out.sort((a, b) => (a.date + a.time).localeCompare(b.date + b.time));
 }
-const linkedTo = (p, tid, name) => [...DB.appts.values()].some(a => a.patientId === p.id && (a.tid === tid || (!a.tid && a.by === name))) || (p.sessions || []).some(r => r.by && r.by === name);
+const linkedTo = (p, tid, name) => (!!tid && p.ownerTid === tid) || [...DB.appts.values()].some(a => a.patientId === p.id && (a.tid === tid || (!a.tid && a.by === name))) || (p.sessions || []).some(r => r.by && r.by === name);
 const getP = id => DB.patients.get(id);
+/* المعالج المسؤول عن الحالة (تحدده الإدارة) */
+const ownerOf = p => p && p.ownerTid ? therapists(p.section).find(t => t.id === p.ownerTid) || null : null;
+const canSetOwner = () => DB.isManager && DB.isManager();
+function ownerChip(p, big) {
+  const t = ownerOf(p);
+  return t ? `<span class="owner-chip${big ? ' big' : ''}" style="--c:${t.color}" title="المعالج المسؤول عن الحالة"><i></i>${esc(t.name)}</span>`
+    : `<span class="owner-chip none${big ? ' big' : ''}" title="لم يُحدد المعالج المسؤول">بدون معالج مسؤول</span>`;
+}
+function ownerBarHTML(p) {
+  const L = therapists(p.section), t = ownerOf(p);
+  if (!canSetOwner()) return `<span class="own-l">المعالج المسؤول:</span> ${ownerChip(p, true)}`;
+  return `<label class="owner-pick" style="--c:${t ? t.color : '#9fb4c2'}"><span class="own-l">المعالج المسؤول:</span><i></i><select id="ownerSel" class="sel">
+    <option value="">— اختر ${p.section === 'women' ? 'المعالجة' : 'المعالج'} —</option>${L.map(x => `<option value="${x.id}" ${x.id === p.ownerTid ? 'selected' : ''}>${esc(x.name)}</option>`).join('')}</select></label>`;
+}
 const uid = pre => pre + Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
 const store = { get(k, d) { try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : d; } catch (e) { return d; } } };
 
@@ -200,24 +214,27 @@ document.addEventListener('click', e => {
 function pCard(p) {
   const ini = (p.name || '؟').trim().charAt(0);
   const done = p.sessions.filter(s => s.date).length;
-  return `<div class="pcard" data-id="${p.id}"><div class="av">${esc(ini)}</div><div style="flex:1">
-    <b>${esc(p.name || 'بدون اسم')}</b> ${payBadge(p)}<div class="m">رقم الملف: ${esc(p.fileNo)} ·${hidePhone() ? '' : ' ' + esc(p.phone || '—') + ' ·'} ${esc(reasonOf(p).slice(0, 40))}</div></div>
+  const ow = ownerOf(p);
+  return `<div class="pcard" data-id="${p.id}" style="${ow ? '--oc:' + ow.color : ''}"><div class="av">${esc(ini)}</div><div style="flex:1">
+    <b>${esc(p.name || 'بدون اسم')}</b> ${payBadge(p)} ${ownerChip(p)}<div class="m">رقم الملف: ${esc(p.fileNo)} ·${hidePhone() ? '' : ' ' + esc(p.phone || '—') + ' ·'} ${esc(reasonOf(p).slice(0, 40))}</div></div>
     ${multiSec() ? `<span class="badge sec-${p.section}">${SEC[p.section] || ''}</span>` : ''}<span class="badge">${done} / 22 جلسة</span></div>`;
 }
 
 /* ---------- patients list ---------- */
 function patientsView() {
   return `<div class="row"><h2 style="margin:0;color:var(--navy)">ملفات المرضى</h2><span class="spacer"></span><button class="btn" id="newP">➕ مريض جديد</button></div>
-  <input class="search" id="ps" placeholder="🔍 ابحث بالاسم أو رقم الملف أو الهاتف" style="margin-top:14px">
+  <div class="row" style="margin-top:14px;gap:10px"><input class="search" id="ps" placeholder="🔍 ابحث بالاسم أو رقم الملف أو الهاتف" style="flex:1;min-width:220px">
+    <select id="pof" class="sel" title="المعالج المسؤول"><option value="">كل المعالجين</option>${TH() && myTid() ? '<option value="@me">مرضاي فقط</option>' : ''}<option value="-">بدون معالج مسؤول</option>${DB.sections().map(sec => therapists(sec).map(t => `<option value="${sec}|${t.id}">${esc(t.name)}</option>`).join('')).join('')}</select></div>
   <div class="plist" id="pl"></div>`;
 }
 function bindPatients() {
   const draw = () => {
-    const q = $('#ps').value.trim();
-    const list = allP().filter(p => !q || [p.name, p.fileNo, p.phone].join(' ').includes(q)).sort((a, b) => (b.updated || b.created).localeCompare(a.updated || a.created));
+    const q = $('#ps').value.trim(), of = $('#pof').value;
+    const okO = p => !of || (of === '-' ? !ownerOf(p) : of === '@me' ? p.ownerTid === myTid() : of === p.section + '|' + p.ownerTid);
+    const list = allP().filter(p => (!q || [p.name, p.fileNo, p.phone].join(' ').includes(q)) && okO(p)).sort((a, b) => (b.updated || b.created).localeCompare(a.updated || a.created));
     $('#pl').innerHTML = list.length ? list.map(pCard).join('') : `<div class="empty">لا توجد ملفات بعد. اضغط «مريض جديد» للبدء.</div>`;
   };
-  $('#ps').addEventListener('input', draw); draw();
+  $('#ps').addEventListener('input', draw); $('#pof').addEventListener('change', draw); draw();
   liveRedraw = draw;
 }
 
@@ -229,7 +246,7 @@ const ta = (k, rows, v) => `<textarea class="lined" data-k="${k}" rows="${rows}"
 const PAIN_C = ['#2e9e5b','#4caf50','#7cb342','#c0ca33','#fdd835','#fbc02d','#ffa000','#f57c00','#ef6c00','#e64a19','#c62828'];
 
 function patientView(p, tab) {
-  const tabs = `<div class="pid-bar"><span class="pid-name">👤 <b data-live="name">${esc(p.name || 'مريض جديد')}</b></span><span>رقم الملف: <b data-live="fileNo">${esc(p.fileNo)}</b></span><span id="payB">${payBadge(p)}</span>${multiSec() ? `<span class="badge sec-${p.section}">${SEC[p.section]}</span>` : ''}</div>
+  const tabs = `<div class="pid-bar"><span class="pid-name">👤 <b data-live="name">${esc(p.name || 'مريض جديد')}</b></span><span>رقم الملف: <b data-live="fileNo">${esc(p.fileNo)}</b></span><span id="payB">${payBadge(p)}</span><span id="ownerB">${ownerBarHTML(p)}</span>${multiSec() ? `<span class="badge sec-${p.section}">${SEC[p.section]}</span>` : ''}</div>
   ${alertsHTML(p)}
   <div class="ptabs">
     <button class="tab ${tab === '0' ? 'on' : ''}" data-go="p/${p.id}/0">📝 الاستبيان الطبي السريع</button>
@@ -504,6 +521,9 @@ function bindPatient(p, tab) {
     p[k] = a; touch(k); refreshAlerts(); }));
   const refreshAlerts = () => { const box = $('#alerts'); if (box) box.outerHTML = alertsHTML(p); const sm = $('#iqSum'); if (sm) sm.innerHTML = iqSummaryHTML(p); const rb = $('#riskBox'); if (rb) rb.innerHTML = riskBoxHTML(p); };
   curP = p;
+  const bindOwner = () => { const os = $('#ownerSel'); if (os) os.onchange = () => { p.ownerTid = os.value || ''; dirty.add('ownerTid'); clearTimeout(t); const ks = [...dirty]; dirty.clear(); DB.savePatient(p, ks); $('#ownerB').innerHTML = ownerBarHTML(p); bindOwner();
+    toast(p.ownerTid ? 'المعالج المسؤول: ' + (ownerOf(p) || {}).name : 'تم إلغاء تحديد المعالج المسؤول'); }; };
+  bindOwner();
   $$('[data-k^="iq_"]').forEach(el => el.addEventListener('change', refreshAlerts));
   $$('[data-pt]').forEach(el => el.addEventListener('change', () => { const v = el.dataset.pt; p.painType = p.painType.filter(x => x !== v); if (el.checked) p.painType.push(v); touch('painType'); }));
   const pain = $('#pain');
@@ -554,6 +574,7 @@ function bindPatient(p, tab) {
     $$('[data-pay]').forEach(el => { if (el !== document.activeElement) el.value = p.payments[+el.dataset.pay][el.dataset.f] || ''; });
     calc();
     $$('[data-live]').forEach(x => { x.textContent = p[x.dataset.live] || ''; });
+    if ($('#ownerB') && document.activeElement !== $('#ownerSel')) { $('#ownerB').innerHTML = ownerBarHTML(p); bindOwner(); }
     const nl = JSON.stringify([p.devices, p.exercises]);
     if (tab === '2' && nl !== lastLists && $('#modal').classList.contains('hidden')) { lastLists = nl; redrawLists(); }
     $('#sv').textContent = '↻ تم التحديث من جهاز آخر';
@@ -815,7 +836,7 @@ async function printProgress(p) {
   const photos = (bef.length || aft.length) ? `<div class="box"><div class="box-t">📷 صور قبل وبعد العلاج</div><div class="box-b grid2">${await ph(bef, 'قبل العلاج')}${await ph(aft, 'بعد العلاج')}</div></div>` : '';
   const ths = [...new Set(progPoints(p).map(r => r.by).filter(Boolean).concat(sessionsOf(p).map(x => x.by).filter(Boolean)))];
   $('#print').innerHTML = `<div class="pg sheet rep">${head('تقرير تطور الحالة', esc(p.name || ''))}
-    <div class="grid3" style="margin-bottom:8px">${pv('اسم المريض', p.name)}${pv('رقم الملف', p.fileNo)}${pv('العمر', p.age)}${pv('تاريخ التقييم الأولي', p.evalDate)}${pv('الجلسات المنفذة', String(sessionsOf(p).length))}${pv('المعالج', ths.join('، ') || p.therapist)}</div>
+    <div class="grid3" style="margin-bottom:8px">${pv('اسم المريض', p.name)}${pv('رقم الملف', p.fileNo)}${pv('العمر', p.age)}${pv('تاريخ التقييم الأولي', p.evalDate)}${pv('الجلسات المنفذة', String(sessionsOf(p).length))}${pv('المعالج المسؤول', (ownerOf(p) || {}).name || '')}${pv('المعالجون', ths.join('، ') || p.therapist)}</div>
     ${pv('سبب الزيارة', reasonOf(p))}
     <div class="box"><div class="box-t">ملخص التحسن</div><div class="box-b">${summaryHTML(p)}</div></div>
     ${chartsHTML(p)}

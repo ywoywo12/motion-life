@@ -49,7 +49,7 @@ const roleOf = u => (users[u] && users[u].role) || u;
 /* صلاحيات حساب المعالج (تعدّلها الإدارة) */
 const DEF_PERMS = { appts: true, patients: true, finance: true, library: true, devices: true, stats: false, phone: false, pay: false, allAppts: false, delFiles: false, bothSecs: false, editAll: true, editOwn: true, createFiles: true, prices: true, files: true };
 /* هل المريض مرتبط بالمعالج (موعد باسمه أو جلسة مسجلة باسمه)؟ */
-const linkedSrv = (sec, pid, a) => Object.values(db[sec].appts).some(x => x.patientId === pid && (x.tid === a.tid || (!x.tid && x.by === a.name))) || ((db[sec].patients[pid] || {}).sessions || []).some(r => r && r.by === a.name);
+const linkedSrv = (sec, pid, a) => ((db[sec].patients[pid] || {}).ownerTid && db[sec].patients[pid].ownerTid === a.tid) || Object.values(db[sec].appts).some(x => x.patientId === pid && (x.tid === a.tid || (!x.tid && x.by === a.name))) || ((db[sec].patients[pid] || {}).sessions || []).some(r => r && r.by === a.name);
 const permsOf = v => Object.assign({}, DEF_PERMS, (v && v.perms) || {});
 const newPw = () => String(100000 + crypto.randomInt(900000));
 /* حسابات المعالجين والمعالجات (تُنشأ مرة واحدة بكلمات مرور عشوائية تُحفظ في data/therapist-accounts.txt) */
@@ -311,10 +311,14 @@ async function api(req, res, url) {
       delete store[id]; persist(); broadcast(sec, { op: 'del', sec, coll, id, origin: req.headers['x-client'] || '' }); return send(res, 200, { ok: true });
     }
     if (req.method === 'PUT') {
-      const { doc, keys } = await body(req);
+      const B = await body(req); const doc = B.doc; let keys = B.keys;
       if (!doc || typeof doc !== 'object') return send(res, 400, { error: 'doc' });
       delete doc.id; delete doc._remain; delete doc._remainPct; delete doc._pstat;
       if (coll === 'patients' && th) {
+        // المعالج المسؤول تحدده الإدارة فقط
+        if (ex) doc.ownerTid = ex.ownerTid; else if (doc.ownerTid !== a.tid) delete doc.ownerTid;
+        if (Array.isArray(keys)) keys = keys.filter(k => k !== 'ownerTid');
+        if (Array.isArray(keys) && !keys.length && ex) return send(res, 403, { error: 'owner_admin_only' });
         if (!ex && !P.createFiles) return send(res, 403, { error: 'no_create' });
         if (ex && !(P.editAll || (P.editOwn && linkedSrv(sec, id, a)))) {
           // صلاحية الصور والملفات: يضيف ملفات، ولا يحذف إلا ما رفعه بنفسه

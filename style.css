@@ -124,6 +124,15 @@ table.sess input[type=date]{min-width:120px}
 .pcard .av{width:46px;height:46px;border-radius:50%;background:var(--teal-l);display:grid;place-items:center;font-weight:800;color:var(--teal-d);font-size:19px;flex:none}
 .pcard b{font-size:18px;color:var(--navy)}
 .pcard .m{color:var(--muted);font-size:14px}
+.pcard[style*="--oc"]{border-inline-start:6px solid var(--oc)} .pcard[style*="--oc"] .av{background:color-mix(in srgb,var(--oc) 18%,#fff);color:var(--oc)}
+.owner-chip{display:inline-flex;align-items:center;gap:6px;font-size:13px;font-weight:700;color:var(--text);background:color-mix(in srgb,var(--c) 14%,#fff);border:1.5px solid var(--c);border-radius:20px;padding:2px 10px;vertical-align:middle;white-space:nowrap}
+.owner-chip i{width:10px;height:10px;border-radius:50%;background:var(--c);flex:none}
+.owner-chip.none{--c:#b8c6cf;color:var(--muted);font-weight:500;background:#f4f7f9;border-style:dashed}
+.owner-chip.big{font-size:15px;padding:4px 12px}
+.owner-pick{display:inline-flex;align-items:center;gap:6px;border:1.5px solid var(--c);border-radius:10px;padding:2px 4px 2px 10px;background:color-mix(in srgb,var(--c) 10%,#fff)}
+.owner-pick i{width:12px;height:12px;border-radius:50%;background:var(--c);flex:none}
+.owner-pick .sel{border:0;background:transparent;font-weight:700;padding:6px 4px}
+.own-l{font-size:13px;color:var(--muted);font-weight:600}
 
 /* chips & library */
 .chips{display:flex;gap:6px;flex-wrap:wrap;margin:8px 0}
