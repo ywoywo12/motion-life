@@ -395,6 +395,9 @@ function page1(p) {
       <textarea class="lined" data-k="strength" rows="2" placeholder="ملاحظات القوة العضلية (العضلة / الجهة...)">${esc(p.strength)}</textarea></div>
     <div class="fcol"><span class="lbl lbl-mic">القيود / الصعوبات الحالية ${micBtn('limits')}</span>${ta('limits', 3, p.limits)}</div>
   </div></div>
+  <div class="box"><div class="box-t">التوازن والأداء الوظيفي</div><div class="box-b">
+    <div class="mmt-row"><div class="mmt"><b>⚖️ مقياس التوازن (1 = ضعيف جداً، 10 = ممتاز)</b>${scaleHTML('balance', p.balance)}</div><div class="mmt"><b>🚶 مقياس الأداء الوظيفي (1 = ضعيف جداً، 10 = ممتاز)</b>${scaleHTML('func', p.func)}</div></div>
+  </div></div>
   <div class="sign">${inp('notes', 'ملاحظات عامة', 'text', p.notes)}${inp('therapist', 'اسم / توقيع المعالج', 'text', p.therapist)}</div>
   ${filesBoxHTML(p)}
   </div>
@@ -579,7 +582,9 @@ const SCALES = {
   pain: { min: 0, max: 10, low: true, name: 'الألم', unit: '/10' },
   spasm: { min: 1, max: 10, low: true, name: 'التشنج العضلي', unit: '/10' },
   mmtU: { min: 1, max: 5, low: false, name: 'القوة العضلية — طرف علوي', unit: '/5' },
-  mmtL: { min: 1, max: 5, low: false, name: 'القوة العضلية — طرف سفلي', unit: '/5' }
+  mmtL: { min: 1, max: 5, low: false, name: 'القوة العضلية — طرف سفلي', unit: '/5' },
+  balance: { min: 1, max: 10, low: false, name: 'التوازن', unit: '/10' },
+  func: { min: 1, max: 10, low: false, name: 'الأداء الوظيفي', unit: '/10' }
 };
 const isNum = v => typeof v === 'number' && !isNaN(v);
 const scaleColor = (k, v) => { const S = SCALES[k]; const t = (v - S.min) / ((S.max - S.min) || 1); return PAIN_C[Math.round((S.low ? t : 1 - t) * 10)]; };
@@ -592,7 +597,7 @@ let progRedraw = null, filesRedraw = null;
 /* نقاط التطور: التقييم الأولي + قياسات الجلسات */
 function progPoints(p) {
   const out = [];
-  const base = { short: 'أولي', label: 'التقييم الأولي', date: p.evalDate || '', pain: p.pain, spasm: p.spasm, mmtU: p.mmtU, mmtL: p.mmtL, base: true };
+  const base = { short: 'أولي', label: 'التقييم الأولي', date: p.evalDate || '', pain: p.pain, spasm: p.spasm, mmtU: p.mmtU, mmtL: p.mmtL, balance: p.balance, func: p.func, base: true };
   if (Object.keys(SCALES).some(k => isNum(base[k]))) out.push(base);
   [...(p.progress || [])].sort((a, b) => (a.date || '').localeCompare(b.date || '') || (+a.no || 0) - (+b.no || 0)).forEach(r => {
     out.push(Object.assign({}, r, { short: r.re ? 'إعادة' : (r.no ? 'ج' + r.no : '•'), label: r.re ? 'إعادة تقييم' + (r.no ? ' (الجلسة ' + r.no + ')' : '') : (r.no ? 'الجلسة ' + r.no : 'جلسة') }));
@@ -606,23 +611,37 @@ function progSummary(p) {
     if (!vals.length) return null;
     const first = vals[0], last = vals[vals.length - 1], d = last[k] - first[k];
     const better = vals.length > 1 && (S.low ? d < 0 : d > 0), worse = vals.length > 1 && (S.low ? d > 0 : d < 0);
-    const pct = first[k] ? Math.round(Math.abs(d) / first[k] * 100) : (d ? 100 : 0);
-    return { k, S, first, last, n: vals.length, better, worse, pct, d };
+    // نسبة التحسن = الجزء المُنجز من المسافة بين القياس الأول وأفضل قيمة ممكنة
+    const room = S.low ? first[k] - S.min : S.max - first[k];
+    const pct = better ? Math.min(100, Math.round(Math.abs(d) / (room || 1) * 100)) : worse ? Math.round(Math.abs(d) / (S.max - S.min) * 100) : 0;
+    return { k, S, first, last, n: vals.length, better, worse, pct, d, spct: better ? pct : worse ? -pct : 0 };
   }).filter(Boolean);
+}
+/* نسبة التحسن العامة = متوسط نسب تحسن المقاييس التي لها قياسان على الأقل */
+function overallOf(p) { const L = progSummary(p).filter(x => x.n > 1); return L.length ? Math.round(L.reduce((s, x) => s + x.spct, 0) / L.length) : null; }
+/* مؤشر الحالة العامة لكل قياس (0–100): متوسط المقاييس بعد تحويلها لنفس الاتجاه */
+function scoreOf(pt) { const v = Object.keys(SCALES).filter(k => isNum(pt[k])).map(k => { const S = SCALES[k]; const t = (pt[k] - S.min) / (S.max - S.min); return S.low ? 1 - t : t; });
+  return v.length ? Math.round(v.reduce((a, b) => a + b, 0) / v.length * 100) : null; }
+function overallHTML(p) {
+  const o = overallOf(p); if (o == null) return '';
+  const pts = progPoints(p).map(scoreOf).filter(isNum);
+  return `<div class="pgall ${o > 0 ? 'good' : o < 0 ? 'bad' : 'flat'}"><div><div class="pgk">📊 نسبة التحسن العامة</div><small class="hint">متوسط نسب تحسن كل المقاييس${pts.length > 1 ? ` · مؤشر الحالة العامة: ${pts[0]}% ← ${pts[pts.length - 1]}%` : ''}</small></div>
+    <b>${o > 0 ? '▲ ' : o < 0 ? '▼ ' : ''}${Math.abs(o)}%</b></div>`;
 }
 function summaryHTML(p) {
   const L = progSummary(p);
-  if (!L.length) return '<div class="empty">لا توجد قياسات بعد. سجّل مقياس الألم والتشنج والقوة العضلية في «ملف المريض والتقييم» (التقييم الأولي)، ثم بعد كل جلسة من زر «تسجيل قياسات جلسة».</div>';
-  return `<div class="pgsum">${L.map(x => `<div class="pgcard ${x.better ? 'good' : x.worse ? 'bad' : 'flat'}"><div class="pgk">${esc(x.S.name)}</div>
+  if (!L.length) return '<div class="empty">لا توجد قياسات بعد. سجّل المقاييس (الألم، التشنج، القوة، التوازن، الأداء الوظيفي) في «ملف المريض والتقييم» (التقييم الأولي)، ثم بعد كل جلسة من زر «تسجيل قياسات جلسة».</div>';
+  return `${overallHTML(p)}<div class="pgsum">${L.map(x => `<div class="pgcard ${x.better ? 'good' : x.worse ? 'bad' : 'flat'}"><div class="pgk">${esc(x.S.name)}</div>
     <div class="pgv"><span title="${esc(x.first.label)}">${x.first[x.k]}</span><span class="arr">←</span><b title="${esc(x.last.label)}">${x.last[x.k]}</b><small>${x.S.unit}</small></div>
-    <div class="pgst">${x.n < 2 ? 'قياس واحد فقط' : x.better ? `▲ تحسّن ${x.pct}%` : x.worse ? `▼ تراجع ${x.pct}%` : '■ بدون تغيير'}</div>
+    <div class="pgst">${x.n < 2 ? 'قياس واحد فقط' : x.better ? `▲ تحسّن ${x.pct}%` : x.worse ? `▼ تراجع ${x.pct}%` : '■ بدون تغيير — 0%'}</div>
+    ${x.n > 1 ? `<div class="pgbar"><i style="width:${Math.abs(x.spct)}%"></i></div>` : ''}
     <small class="hint">من ${esc(x.first.label)} إلى ${esc(x.last.label)}</small></div>`).join('')}</div>`;
 }
 /* رسم بياني خطي (SVG) لكل مقياس */
 function chartSVG(title, pts, series, min, max) {
   const W = 440, H = 220, L = 28, R = 30, T = 14, B = 32, pw = W - L - R - 28, ph = H - T - B, n = pts.length;
   const x = i => L + 14 + (n <= 1 ? pw / 2 : i * pw / (n - 1)), y = v => T + (max - v) / (max - min) * ph;
-  const step = max - min > 6 ? 2 : 1, every = Math.ceil(n / 8);
+  const step = max - min > 20 ? 20 : max - min > 6 ? 2 : 1, every = Math.ceil(n / 8);
   let g = '';
   for (let v = max; v >= min; v -= step) g += `<line x1="${L}" x2="${W - R}" y1="${y(v)}" y2="${y(v)}" class="cg"/><text x="${L - 8}" y="${y(v) + 4}" class="ct" text-anchor="end">${v}</text>`;
   pts.forEach((pt, i) => { if (i % every === 0 || i === n - 1) g += `<text x="${x(i)}" y="${H - 12}" class="ct" text-anchor="middle">${esc(pt.short)}</text>`; });
@@ -642,13 +661,15 @@ function chartsHTML(p) {
     ${chartSVG('📉 مقياس الألم (0 = بدون ألم، 10 = أشد ألم)', pts, [{ k: 'pain', name: 'الألم', color: '#13788a' }], 0, 10)}
     ${chartSVG('📉 مقياس التشنج العضلي (1 – 10)', pts, [{ k: 'spasm', name: 'التشنج', color: '#13788a' }], 1, 10)}
     ${chartSVG('📈 القوة العضلية (1 – 5)', pts, [{ k: 'mmtU', name: 'طرف علوي', color: '#2f7fd0' }, { k: 'mmtL', name: 'طرف سفلي', color: '#e07b12' }], 1, 5)}
+    ${chartSVG('📈 التوازن والأداء الوظيفي (1 – 10)', pts, [{ k: 'balance', name: 'التوازن', color: '#2f7fd0' }, { k: 'func', name: 'الأداء الوظيفي', color: '#e07b12' }], 1, 10)}
+    ${pts.some(x => isNum(scoreOf(x))) ? chartSVG('📊 المخطط العام — مؤشر الحالة العامة (0% – 100%، الأعلى أفضل)', pts.map(x => Object.assign({}, x, { _score: scoreOf(x) })), [{ k: '_score', name: 'الحالة العامة', color: '#0f2c4c' }], 0, 100) : ''}
   </div>`;
 }
 function progTableHTML(p, actions) {
   const pts = progPoints(p); if (!pts.length) return '';
   const c = (k, v) => isNum(v) ? `<span class="sv" style="--c:${scaleColor(k, v)}">${v}</span>` : '—';
-  return `<table class="slog prog"><thead><tr><th>القياس</th><th>التاريخ</th><th>الألم</th><th>التشنج</th><th>قوة علوي</th><th>قوة سفلي</th><th>المعالج</th><th>ملاحظات</th>${actions ? '<th></th>' : ''}</tr></thead><tbody>
-    ${pts.map(r => `<tr class="${r.base ? 'base' : r.re ? 're' : ''}"><td><b>${esc(r.label)}</b></td><td>${esc(r.date || '')}</td><td>${c('pain', r.pain)}</td><td>${c('spasm', r.spasm)}</td><td>${c('mmtU', r.mmtU)}</td><td>${c('mmtL', r.mmtL)}</td><td>${esc(r.base ? (p.therapist || '') : (r.by || ''))}</td><td>${esc(r.note || '')}</td>
+  return `<table class="slog prog"><thead><tr><th>القياس</th><th>التاريخ</th><th>الألم</th><th>التشنج</th><th>قوة علوي</th><th>قوة سفلي</th><th>التوازن</th><th>الأداء</th><th>العام</th><th>المعالج</th><th>ملاحظات</th>${actions ? '<th></th>' : ''}</tr></thead><tbody>
+    ${pts.map(r => `<tr class="${r.base ? 'base' : r.re ? 're' : ''}"><td><b>${esc(r.label)}</b></td><td>${esc(r.date || '')}</td><td>${c('pain', r.pain)}</td><td>${c('spasm', r.spasm)}</td><td>${c('mmtU', r.mmtU)}</td><td>${c('mmtL', r.mmtL)}</td><td>${c('balance', r.balance)}</td><td>${c('func', r.func)}</td><td>${isNum(scoreOf(r)) ? scoreOf(r) + '%' : '—'}</td><td>${esc(r.base ? (p.therapist || '') : (r.by || ''))}</td><td>${esc(r.note || '')}</td>
       ${actions ? `<td style="white-space:nowrap">${r.base ? `<button class="btn light sm" data-go="p/${p.id}/1" type="button">تعديل</button>` : `<button class="btn light sm" data-pedit="${r.id}" type="button">تعديل</button><button class="x" data-pdel="${r.id}" type="button" title="حذف">×</button>`}</td>` : ''}</tr>`).join('')}</tbody></table>`;
 }
 function page3(p) {
@@ -737,7 +758,7 @@ function progressModal(p, preset) {
   preset = preset || {};
   p.progress = p.progress || [];
   const ex = preset.id ? p.progress.find(r => r.id === preset.id) : (preset.date && preset.no ? p.progress.find(r => r.date === preset.date && String(r.no) === String(preset.no)) : null);
-  const r = Object.assign({ date: today(), no: '', by: myName() || '', pain: null, spasm: null, mmtU: null, mmtL: null, note: '', re: false }, ex || {}, ex ? {} : preset);
+  const r = Object.assign({ date: today(), no: '', by: myName() || '', pain: null, spasm: null, mmtU: null, mmtL: null, balance: null, func: null, note: '', re: false }, ex || {}, ex ? {} : preset);
   if (!r.no && !ex) { const mx = Math.max(0, ...p.progress.map(x => +x.no || 0)); r.no = String(Math.max(mx + 1, sessionsOf(p).length || 1)); }
   const v = Object.assign({}, r);
   const names = therapists(p.section).map(t => t.name); if (r.by && !names.includes(r.by)) names.unshift(r.by);
@@ -753,6 +774,7 @@ function progressModal(p, preset) {
       <div class="f scale-f"><label>الألم (0–10):</label>${scaleHTML('pain', r.pain)}</div>
       <div class="f scale-f"><label>التشنج العضلي (1–10):</label>${scaleHTML('spasm', r.spasm)}</div>
       <div class="mmt-row"><div class="mmt"><b>💪 قوة الطرف العلوي (1–5)</b>${scaleHTML('mmtU', r.mmtU)}</div><div class="mmt"><b>🦵 قوة الطرف السفلي (1–5)</b>${scaleHTML('mmtL', r.mmtL)}</div></div>
+      <div class="mmt-row"><div class="mmt"><b>⚖️ التوازن (1–10)</b>${scaleHTML('balance', r.balance)}</div><div class="mmt"><b>🚶 الأداء الوظيفي (1–10)</b>${scaleHTML('func', r.func)}</div></div>
     </div>
     <div class="fcol" style="margin-top:10px"><span class="lbl">ملاحظات / الاستجابة للعلاج</span><input id="mT" value="${esc(r.note || '')}"></div>
     <div class="modal-f"><button class="btn big" id="ok">✓ حفظ القياسات</button><button class="btn ghost" id="cn">${preset.fromAppt ? 'تخطي' : 'إلغاء'}</button></div>`);
@@ -761,7 +783,7 @@ function progressModal(p, preset) {
   $('#ok').onclick = () => {
     if (!Object.keys(SCALES).some(k => isNum(v[k]))) return toast('اختر قيمة لمقياس واحد على الأقل');
     const rec = { id: ex ? ex.id : uid('m'), date: $('#mD').value || today(), no: $('#mN').value, by: $('#mB').value, re: $('#mR').checked, note: $('#mT').value.trim(),
-      pain: isNum(v.pain) ? v.pain : null, spasm: isNum(v.spasm) ? v.spasm : null, mmtU: isNum(v.mmtU) ? v.mmtU : null, mmtL: isNum(v.mmtL) ? v.mmtL : null, at: new Date().toISOString() };
+      pain: isNum(v.pain) ? v.pain : null, spasm: isNum(v.spasm) ? v.spasm : null, mmtU: isNum(v.mmtU) ? v.mmtU : null, mmtL: isNum(v.mmtL) ? v.mmtL : null, balance: isNum(v.balance) ? v.balance : null, func: isNum(v.func) ? v.func : null, at: new Date().toISOString() };
     if (ex) Object.assign(ex, rec); else p.progress.push(rec);
     DB.savePatient(p, ['progress']); closeModal(); toast('تم حفظ القياسات');
     if (current === 'p' && (location.hash.split('/')[1] || '') === p.id) { if (progRedraw) progRedraw(); else render(); }
@@ -1472,6 +1494,7 @@ function printPatient(p, exOnly) {
         <div class="fcol"><div class="f"><label>شدة الألم:</label><span class="pain" style="direction:ltr">${Array.from({ length: 11 }, (_, i) => `<span class="${p.pain === i ? 'on' : ''}">${i}</span>`).join('')}</span></div>
         <div>${['راحة', 'حركة', 'ليل', 'متقطع', 'مستمر'].map(t => (p.painType.includes(t) ? '☑ ' : '☐ ') + t).join(' &nbsp; ')}</div>${pv('مدة الأعراض', p.duration)}${pv('التشنج العضلي', isNum(p.spasm) ? p.spasm + ' / 10' : '')}</div></div></div>
       <div class="box"><div class="box-t">القوة العضلية والقيود الحالية</div><div class="box-b grid2"><div class="fcol"><span class="lbl">القوة العضلية</span><div class="grid2">${pv('طرف علوي', isNum(p.mmtU) ? p.mmtU + ' / 5' : '')}${pv('طرف سفلي', isNum(p.mmtL) ? p.mmtL + ' / 5' : '')}</div>${pt(p.strength, 40)}</div><div class="fcol"><span class="lbl">القيود / الصعوبات الحالية</span>${pt(p.limits, 66)}</div></div></div>
+      ${isNum(p.balance) || isNum(p.func) ? `<div class="grid2">${pv('مقياس التوازن', isNum(p.balance) ? p.balance + ' / 10' : '')}${pv('مقياس الأداء الوظيفي', isNum(p.func) ? p.func + ' / 10' : '')}</div>` : ''}
       <div class="sign">${pv('ملاحظات عامة', p.notes)}${pv('اسم / توقيع المعالج', p.therapist)}</div>
       ${pfoot('Motion Life - ملف المريض', phone)}</div>`;
     const devs = p.devices.map(d => { const dev = DEVM[d.dev] || { name: d.dev, params: [] };
