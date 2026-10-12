@@ -161,7 +161,7 @@ function normP(p) {
   while (p.sessions.length < 22) p.sessions.push({ date: '', note: '', by: '' });
   if (!Array.isArray(p.payments)) p.payments = [];
   while (p.payments.length < 4) p.payments.push({ amount: '', date: '' });
-  ['painType', 'devices', 'exercises'].forEach(k => { if (!Array.isArray(p[k])) p[k] = []; });
+  ['painType', 'devices', 'exercises', 'progress', 'files'].forEach(k => { if (!Array.isArray(p[k])) p[k] = []; });
   return p;
 }
 M.normP = normP;
@@ -339,7 +339,34 @@ M._del = function (sec, coll, id) { this._queue({ op: 'del', sec, coll, id }); t
 M.staff = async function () { try { return (await (await fetch('/api/staff')).json()).staff || []; } catch (e) { return []; } };
 M.users = async function () { const r = await this._req('GET', '/api/users'); return r.ok ? r.users : []; };
 M.userAction = async function (body) { return this._req('POST', '/api/users', body); };
-M.pending = () => M.mode === 'server' ? M._outbox().length : 0;
+/* ملفات وصور المرضى: على خادم المركز تُحفظ كملفات، وعلى النسخة الأونلاين/المحلية تُحفظ مضغوطة */
+const blobToURL = b => new Promise((ok, bad) => { const r = new FileReader(); r.onload = () => ok(r.result); r.onerror = bad; r.readAsDataURL(b); });
+const fileCache = new Map();
+M.uploadFile = async function (sec, pid, blob, name) {
+  if (this.mode === 'server') {
+    let r; try { r = await fetch(`/api/file/${sec}/${pid}`, { method: 'POST', headers: { 'Content-Type': blob.type || 'application/octet-stream', 'X-Name': encodeURIComponent(name || ''), Authorization: 'Bearer ' + (this._token() || '') }, body: blob }); }
+    catch (e) { const er = new Error('offline'); er.code = 'offline'; throw er; }
+    const j = await r.json().catch(() => ({})); if (!r.ok) { const er = new Error(j.error || 'fail'); er.code = r.status === 403 ? 'denied' : (j.error || 'fail'); throw er; }
+    return { id: j.id, size: j.size };
+  }
+  const data = await blobToURL(blob);
+  if (data.length > 950000) { const er = new Error('big'); er.code = 'big'; throw er; }
+  const id = 'f' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+  if (this.mode === 'cloud') await col(sec, 'files').doc(id).set({ pid, name: name || '', data });
+  else if (!ls.set('ml_file_' + id, data)) { const er = new Error('big'); er.code = 'big'; throw er; }
+  fileCache.set(id, data);
+  return { id, size: blob.size };
+};
+M.fileSrc = async function (sec, pid, f) {
+  if (this.mode === 'server') return `/api/file/${sec}/${pid}/${f.id}?token=${encodeURIComponent(this._token() || '')}`;
+  if (fileCache.has(f.id)) return fileCache.get(f.id);
+  let d = '';
+  if (this.mode === 'cloud') { try { const s = await col(sec, 'files').doc(f.id).get(); d = s.exists ? s.data().data : ''; } catch (e) {} }
+  else d = ls.get('ml_file_' + f.id, '');
+  if (d) fileCache.set(f.id, d);
+  return d;
+};
+M.pending = () =>M.mode === 'server' ? M._outbox().length : 0;
 
 window.addEventListener('online', () => { if (M.mode !== 'server') { M.online = true; M.emit('net'); } });
 window.addEventListener('offline', () => { if (M.mode !== 'server') { M.online = false; M.emit('net'); } });

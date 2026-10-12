@@ -47,7 +47,7 @@ if (!users) { users = {}; ROLES.forEach(r => { const salt = crypto.randomBytes(8
 let sessions = readJSON(SESSF, {});
 const roleOf = u => (users[u] && users[u].role) || u;
 /* صلاحيات حساب المعالج (تعدّلها الإدارة) */
-const DEF_PERMS = { appts: true, patients: true, finance: true, library: true, devices: true, stats: false, phone: false, pay: false, allAppts: false, delFiles: false, bothSecs: false, editAll: true, editOwn: true, createFiles: true };
+const DEF_PERMS = { appts: true, patients: true, finance: true, library: true, devices: true, stats: false, phone: false, pay: false, allAppts: false, delFiles: false, bothSecs: false, editAll: true, editOwn: true, createFiles: true, prices: true };
 /* هل المريض مرتبط بالمعالج (موعد باسمه أو جلسة مسجلة باسمه)؟ */
 const linkedSrv = (sec, pid, a) => Object.values(db[sec].appts).some(x => x.patientId === pid && (x.tid === a.tid || (!x.tid && x.by === a.name))) || ((db[sec].patients[pid] || {}).sessions || []).some(r => r && r.by === a.name);
 const permsOf = v => Object.assign({}, DEF_PERMS, (v && v.perms) || {});
@@ -92,17 +92,37 @@ const isManager = a => a.role === 'admin' || a.role === 'women' || a.role === 'm
 const meOf = a => ({ user: a.user, role: a.role, section: a.section, tid: a.tid, name: a.name, perms: a.perms || undefined });
 /* ما يراه المعالج: بدون أرقام هواتف المرضى */
 const PROTECTED_PAY = ['payMode', 'sessionPrice', 'agreedSessions', 'agreedTotal', 'payments'];
+const numS = v => { const n = parseFloat(String(v == null ? '' : v).replace(/[^\d.]/g, '')); return isNaN(n) ? 0 : n; };
+function payStat(d) {
+  const total = numS(d.agreedTotal) || (d.payMode === 'session' ? numS(d.sessionPrice) * numS(d.agreedSessions) : 0);
+  const paid = (d.payments || []).reduce((s, x) => s + numS(x && x.amount), 0) + (d.payMode === 'session' ? (d.sessions || []).reduce((s, x) => s + numS(x && x.amount), 0) : 0);
+  return { remain: total - paid, st: !total ? 'none' : paid >= total ? 'done' : 'due' };
+}
+/* ما يراه المعالج: بدون أرقام الهواتف، وبدون الأسعار والدفعات (حسب صلاحياته) — يبقى المبلغ المتبقي وعدد الجلسات */
 function viewDoc(a, coll, doc) {
-  if (a.role !== 'therapist' || !doc || coll === 'meta' || a.perms.phone) return doc;
-  const d = Object.assign({}, doc); delete d.phone; return d;
+  if (a.role !== 'therapist' || !doc || coll === 'meta') return doc;
+  const P = a.perms; if (P.phone && P.prices) return doc;
+  const d = Object.assign({}, doc);
+  if (!P.phone) delete d.phone;
+  if (!P.prices) {
+    if (coll === 'appts') delete d.amount;
+    else { const s = payStat(doc); d._remain = s.remain; d._pstat = s.st; delete d.sessionPrice; delete d.agreedTotal; delete d.payments;
+      if (Array.isArray(d.sessions)) d.sessions = d.sessions.map(r => { if (!r || typeof r !== 'object') return r; const x = Object.assign({}, r); delete x.amount; return x; }); }
+  }
+  return d;
 }
 function viewSection(a, sec) {
-  const src = db[sec]; if (a.role !== 'therapist' || a.perms.phone) return src;
+  const src = db[sec]; if (a.role !== 'therapist' || (a.perms.phone && a.perms.prices)) return src;
   const out = { meta: src.meta, patients: {}, appts: {} };
   Object.entries(src.patients).forEach(([id, d]) => { out.patients[id] = viewDoc(a, 'patients', d); });
   Object.entries(src.appts).forEach(([id, d]) => { out.appts[id] = viewDoc(a, 'appts', d); });
   return out;
 }
+/* ملفات وصور المرضى: data/files/<القسم>/<رقم المريض>/ */
+const FILES = path.join(DATA, 'files');
+const FILE_MIME = { '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.png': 'image/png', '.webp': 'image/webp', '.gif': 'image/gif', '.heic': 'image/heic', '.pdf': 'application/pdf', '.mp4': 'video/mp4', '.doc': 'application/msword', '.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' };
+const extOf = (name, type) => { const e = (path.extname(String(name || '')) || '').toLowerCase(); if (/^\.[a-z0-9]{1,5}$/.test(e)) return e; const m = Object.entries(FILE_MIME).find(([, t]) => t === type); return m ? m[0] : '.bin'; };
+const canEditSrv = (a, sec, pid) => a.role !== 'therapist' || a.perms.editAll || (a.perms.editOwn && linkedSrv(sec, pid, a));
 const body = req => new Promise((ok, bad) => { let b = ''; req.on('data', d => { b += d; if (b.length > 8e6) { bad(new Error('too big')); req.destroy(); } }); req.on('end', () => { try { ok(b ? JSON.parse(b) : {}); } catch (e) { bad(e); } }); });
 function lanAddresses() {
   const out = [];
@@ -251,13 +271,38 @@ async function api(req, res, url) {
     res.writeHead(200, { 'Content-Type': 'application/json', 'Content-Disposition': 'attachment; filename="motion-life-server-backup-' + new Date().toISOString().slice(0, 10) + '.json"' });
     return res.end(JSON.stringify({ app: 'motion-life-server', at: new Date().toISOString(), db }));
   }
+  const fm = p.match(/^\/api\/file\/(women|men)\/([\w-]+)(?:\/([\w-]+))?$/);
+  if (fm) {
+    const [, sec, pid, fid] = fm;
+    if (!allowed(a, sec)) return send(res, 403, { error: 'forbidden' });
+    const dir = path.join(FILES, sec, pid);
+    if (req.method === 'GET' && fid) {
+      const f = fs.existsSync(dir) && fs.readdirSync(dir).find(x => x.startsWith(fid + '.'));
+      if (!f) { res.writeHead(404); return res.end(); }
+      const ext = path.extname(f).toLowerCase();
+      res.writeHead(200, { 'Content-Type': FILE_MIME[ext] || 'application/octet-stream', 'Cache-Control': 'private, max-age=604800' });
+      return fs.createReadStream(path.join(dir, f)).pipe(res);
+    }
+    if (req.method === 'POST' && !fid) {
+      if (!db[sec].patients[pid]) return send(res, 404, { error: 'nopatient' });
+      if (!canEditSrv(a, sec, pid)) return send(res, 403, { error: 'no_edit' });
+      let buf; try { buf = await rawBody(req); } catch (e) { return send(res, 413, { error: 'too_big' }); }
+      if (!buf.length) return send(res, 400, { error: 'empty' });
+      let name = ''; try { name = decodeURIComponent(req.headers['x-name'] || ''); } catch (e) {}
+      const id = 'f' + Date.now().toString(36) + crypto.randomBytes(3).toString('hex');
+      fs.mkdirSync(dir, { recursive: true });
+      fs.writeFileSync(path.join(dir, id + extOf(name, req.headers['content-type'])), buf);
+      return send(res, 200, { ok: true, id, size: buf.length });
+    }
+    return send(res, 405, { error: 'method' });
+  }
   const m = p.match(/^\/api\/doc\/(\w+)\/(\w+)\/([\w-]+)$/);
   if (m) {
     const [, sec, coll, id] = m;
     if (!SECS.includes(sec) || !COLLS.includes(coll)) return send(res, 400, { error: 'path' });
     if (!allowed(a, sec)) return send(res, 403, { error: 'forbidden' });
     const store = db[sec][coll], ex = store[id], th = a.role === 'therapist', P = a.perms || {};
-    const limAppt = th && !P.allAppts, lockPay = th && !P.pay, hidePhone = th && !P.phone;
+    const limAppt = th && !P.allAppts, lockPay = th && (!P.pay || !P.prices), hidePhone = th && !P.phone;
     if (th && coll === 'meta') return send(res, 403, { error: 'forbidden' });
     if (req.method === 'DELETE') {
       if (th && coll === 'patients' && !P.delFiles) return send(res, 403, { error: 'forbidden' });
@@ -267,7 +312,7 @@ async function api(req, res, url) {
     if (req.method === 'PUT') {
       const { doc, keys } = await body(req);
       if (!doc || typeof doc !== 'object') return send(res, 400, { error: 'doc' });
-      delete doc.id;
+      delete doc.id; delete doc._remain; delete doc._pstat;
       if (coll === 'patients' && th) {
         if (!ex && !P.createFiles) return send(res, 403, { error: 'no_create' });
         if (ex && !(P.editAll || (P.editOwn && linkedSrv(sec, id, a)))) return send(res, 403, { error: 'no_edit' });
