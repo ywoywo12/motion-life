@@ -47,7 +47,7 @@ if (!users) { users = {}; ROLES.forEach(r => { const salt = crypto.randomBytes(8
 let sessions = readJSON(SESSF, {});
 const roleOf = u => (users[u] && users[u].role) || u;
 /* صلاحيات حساب المعالج (تعدّلها الإدارة) */
-const DEF_PERMS = { appts: true, patients: true, finance: true, library: true, devices: true, stats: false, phone: false, pay: false, allAppts: false, delFiles: false, bothSecs: false, editAll: true, editOwn: true, createFiles: true, prices: true };
+const DEF_PERMS = { appts: true, patients: true, finance: true, library: true, devices: true, stats: false, phone: false, pay: false, allAppts: false, delFiles: false, bothSecs: false, editAll: true, editOwn: true, createFiles: true, prices: true, files: true };
 /* هل المريض مرتبط بالمعالج (موعد باسمه أو جلسة مسجلة باسمه)؟ */
 const linkedSrv = (sec, pid, a) => Object.values(db[sec].appts).some(x => x.patientId === pid && (x.tid === a.tid || (!x.tid && x.by === a.name))) || ((db[sec].patients[pid] || {}).sessions || []).some(r => r && r.by === a.name);
 const permsOf = v => Object.assign({}, DEF_PERMS, (v && v.perms) || {});
@@ -123,6 +123,7 @@ const FILES = path.join(DATA, 'files');
 const FILE_MIME = { '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.png': 'image/png', '.webp': 'image/webp', '.gif': 'image/gif', '.heic': 'image/heic', '.pdf': 'application/pdf', '.mp4': 'video/mp4', '.doc': 'application/msword', '.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' };
 const extOf = (name, type) => { const e = (path.extname(String(name || '')) || '').toLowerCase(); if (/^\.[a-z0-9]{1,5}$/.test(e)) return e; const m = Object.entries(FILE_MIME).find(([, t]) => t === type); return m ? m[0] : '.bin'; };
 const canEditSrv = (a, sec, pid) => a.role !== 'therapist' || a.perms.editAll || (a.perms.editOwn && linkedSrv(sec, pid, a));
+const canFilesSrv = (a, sec, pid) => a.role !== 'therapist' || a.perms.files || canEditSrv(a, sec, pid);
 const body = req => new Promise((ok, bad) => { let b = ''; req.on('data', d => { b += d; if (b.length > 8e6) { bad(new Error('too big')); req.destroy(); } }); req.on('end', () => { try { ok(b ? JSON.parse(b) : {}); } catch (e) { bad(e); } }); });
 function lanAddresses() {
   const out = [];
@@ -285,7 +286,7 @@ async function api(req, res, url) {
     }
     if (req.method === 'POST' && !fid) {
       if (!db[sec].patients[pid]) return send(res, 404, { error: 'nopatient' });
-      if (!canEditSrv(a, sec, pid)) return send(res, 403, { error: 'no_edit' });
+      if (!canFilesSrv(a, sec, pid)) return send(res, 403, { error: 'no_edit' });
       let buf; try { buf = await rawBody(req); } catch (e) { return send(res, 413, { error: 'too_big' }); }
       if (!buf.length) return send(res, 400, { error: 'empty' });
       let name = ''; try { name = decodeURIComponent(req.headers['x-name'] || ''); } catch (e) {}
@@ -315,7 +316,13 @@ async function api(req, res, url) {
       delete doc.id; delete doc._remain; delete doc._pstat;
       if (coll === 'patients' && th) {
         if (!ex && !P.createFiles) return send(res, 403, { error: 'no_create' });
-        if (ex && !(P.editAll || (P.editOwn && linkedSrv(sec, id, a)))) return send(res, 403, { error: 'no_edit' });
+        if (ex && !(P.editAll || (P.editOwn && linkedSrv(sec, id, a)))) {
+          // صلاحية الصور والملفات: يضيف ملفات، ولا يحذف إلا ما رفعه بنفسه
+          const onlyFiles = Array.isArray(keys) && keys.length && keys.every(k => k === 'files' || k === 'updated') && Array.isArray(doc.files) && P.files;
+          if (!onlyFiles) return send(res, 403, { error: 'no_edit' });
+          const ids = new Set(doc.files.map(f => f && f.id));
+          if ((ex.files || []).some(f => f && !ids.has(f.id) && f.u !== a.user)) return send(res, 403, { error: 'no_edit' });
+        }
       }
       if (coll === 'appts') {
         if (limAppt && ((ex && ex.tid !== a.tid) || doc.tid !== a.tid)) return send(res, 403, { error: 'not_yours' });

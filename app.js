@@ -22,7 +22,7 @@ const TH = () => !!(DB.isTherapist && DB.isTherapist());
 const myTid = () => (DB.me && DB.me.tid) || '';
 const myName = () => (DB.me && DB.me.name) || '';
 const secOf = () => TH() ? DB.me.section : DB.role;
-const DEF_PERMS = { appts: true, patients: true, finance: true, library: true, devices: true, stats: false, phone: false, pay: false, allAppts: false, delFiles: false, bothSecs: false, editAll: true, editOwn: true, createFiles: true, prices: true };
+const DEF_PERMS = { appts: true, patients: true, finance: true, library: true, devices: true, stats: false, phone: false, pay: false, allAppts: false, delFiles: false, bothSecs: false, editAll: true, editOwn: true, createFiles: true, prices: true, files: true };
 const can = k => !TH() || !!((DB.me && DB.me.perms) || DEF_PERMS)[k];
 const hidePhone = () => TH() && !can('phone');
 const hidePrices = () => TH() && !can('prices');
@@ -33,8 +33,9 @@ const canStats = () => DB.role === 'admin' || (TH() && can('stats'));
 const pageOK = k => !TH() || ['home', 'settings', 'p', 'setup', ''].includes(k) || (k === 'stats' ? can('stats') : can(k));
 const PERM_LIST = [['appts', 'المواعيد'], ['patients', 'ملفات المرضى'], ['finance', 'المتابعة المالية'], ['stats', 'إحصائيات المعالجين'], ['library', 'مكتبة التمارين'], ['devices', 'الأجهزة والبروتوكولات'],
   ['phone', 'رؤية أرقام هواتف المرضى'], ['pay', 'تعديل الدفعات (ورؤية كل الملفات في المتابعة المالية)'], ['allAppts', 'إدارة مواعيد كل المعالجين (حجز/تعديل/حذف)'], ['delFiles', 'حذف ملفات المرضى'], ['bothSecs', 'الوصول للقسمين (النساء والرجال)'],
-  ['editAll', 'تعديل ملفات كل المرضى'], ['editOwn', 'تعديل ملفات مرضاه فقط (المرتبطين به بموعد أو جلسة)'], ['createFiles', 'إضافة ملف طبي جديد'], ['prices', 'رؤية أسعار الجلسات والدفعات (عدد الجلسات والمبلغ المتبقي يبقيان ظاهرين)']];
+  ['editAll', 'تعديل ملفات كل المرضى'], ['editOwn', 'تعديل ملفات مرضاه فقط (المرتبطين به بموعد أو جلسة)'], ['createFiles', 'إضافة ملف طبي جديد'], ['prices', 'رؤية أسعار الجلسات والدفعات (عدد الجلسات والمبلغ المتبقي يبقيان ظاهرين)'], ['files', 'مشاهدة ورفع الصور والتقارير والملفات (حتى لو كان الملف للعرض فقط)']];
 /* هل يستطيع الحساب تعديل ملف هذا المريض؟ */
+const canFiles = p => !TH() || can('files') || canEditP(p);
 const canEditP = p => !TH() || can('editAll') || (can('editOwn') && !!p && linkedTo(p, myTid(), myName()));
 /* الحالة المالية لكل ملف */
 function payState(p) {
@@ -125,7 +126,7 @@ let current = '';
 function render() {
   const app = $('#app');
   const h = (location.hash || '#home').slice(1).split('/');
-  stopMic(); livePatient = null; liveRedraw = null; progRedraw = null;
+  stopMic(); livePatient = null; liveRedraw = null; progRedraw = null; filesRedraw = null;
   if (h[0] === 'setup') { current = 'setup'; app.innerHTML = setupView(); bindSetup(); return; }
   if (!DB.role) { current = 'login'; app.innerHTML = loginView(); bindLogin(); return; }
   closeModal();
@@ -199,7 +200,7 @@ function pCard(p) {
   const ini = (p.name || '؟').trim().charAt(0);
   const done = p.sessions.filter(s => s.date).length;
   return `<div class="pcard" data-id="${p.id}"><div class="av">${esc(ini)}</div><div style="flex:1">
-    <b>${esc(p.name || 'بدون اسم')}</b> ${payBadge(p)}<div class="m">رقم الملف: ${esc(p.fileNo)} ·${hidePhone() ? '' : ' ' + esc(p.phone || '—') + ' ·'} ${esc(p.complaint ? p.complaint.slice(0, 40) : '')}</div></div>
+    <b>${esc(p.name || 'بدون اسم')}</b> ${payBadge(p)}<div class="m">رقم الملف: ${esc(p.fileNo)} ·${hidePhone() ? '' : ' ' + esc(p.phone || '—') + ' ·'} ${esc(reasonOf(p).slice(0, 40))}</div></div>
     ${multiSec() ? `<span class="badge sec-${p.section}">${SEC[p.section] || ''}</span>` : ''}<span class="badge">${done} / 22 جلسة</span></div>`;
 }
 
@@ -338,6 +339,32 @@ function page0(p) {
   <div class="row"><span class="spacer"></span><button class="btn big" data-go="p/${p.id}/1">التالي: ملف المريض والتقييم ←</button></div>`;
 }
 
+/* ملخص نتائج الاستبيان الطبي السريع (يظهر في ملف التقييم بدل الشكوى والأمراض المزمنة) */
+const reasonOf = p => [p.iq_where, p.complaint].filter(Boolean).join(' — ');
+function iqSummary(p) {
+  const yes = (k, t) => p[k] === 'نعم' ? t : null, j = a => a.filter(Boolean).join('، ');
+  const R = [];
+  const where = [p.iq_where, p.iq_since ? 'منذ ' + p.iq_since : '', arrOf(p, 'iq_onset').length ? 'بدأت ' + j(arrOf(p, 'iq_onset')) : ''].filter(Boolean).join(' · ');
+  if (where) R.push(['المشكلة الأساسية وسبب الزيارة', where]);
+  const sym = [j(arrOf(p, 'iq_sym')), isNum(p.pain) ? 'شدة الألم ' + p.pain + '/10' : '', p.iq_activity ? 'النشاط الصعب: ' + p.iq_activity : ''].filter(Boolean).join(' · ');
+  if (sym) R.push(['الأعراض', sym]);
+  const hx = j(arrOf(p, 'iq_hx').concat([p.iq_other,
+    p.iq_osteo === 'نعم' ? 'هشاشة عظام' + (p.iq_osteoGrade ? ' (' + p.iq_osteoGrade + ')' : '') + (p.iq_tscore ? ' T-score ' + p.iq_tscore : '') : p.iq_osteo === 'لا أعرف' ? 'هشاشة العظام: لا يعرف' : '',
+    yes('iq_allergy', 'حساسية'), yes('iq_meds', 'أدوية منتظمة/مميعات/كورتيزون'), yes('iq_implant', 'منظم قلب/معدن مزروع'), yes('iq_surgery', 'عملية أو كسر سابق'),
+    p.iq_preg === 'نعم' ? 'حمل' : p.iq_preg === 'غير مؤكدة' ? 'حمل غير مؤكد' : '']));
+  if (hx) R.push(['التاريخ الطبي', hx]);
+  if (p.iq_details) R.push(['تفاصيل', p.iq_details]);
+  const fl = arrOf(p, 'iq_flags');
+  if (fl.length) R.push(['علامات الخطر', redFlags(p).length ? '⚠️ ' + j(redFlags(p)) : 'لا يوجد', redFlags(p).length ? 'red' : '']);
+  if (p.complaint) R.push(['الشكوى (مسجلة سابقاً)', p.complaint]);
+  if (p.chronic) R.push(['أمراض مزمنة/أدوية/عمليات (مسجلة سابقاً)', p.chronic]);
+  return R;
+}
+function iqSummaryHTML(p) {
+  const R = iqSummary(p);
+  if (!R.length) return `<div class="empty" style="padding:10px">لم يُعبّأ الاستبيان الطبي السريع بعد — <a href="#p/${p.id}/0">افتح الاستبيان</a> وسيظهر ملخصه هنا تلقائياً.</div>`;
+  return `<div class="iqsum">${R.map(([k, v, c]) => `<div class="${c || ''}"><b>${esc(k)}:</b> <span>${esc(v)}</span></div>`).join('')}</div>`;
+}
 function page1(p) {
   const pt = ['راحة', 'حركة', 'ليل', 'متقطع', 'مستمر'];
   return `<div class="sheet">${head('الحركة تبدأ من هنا', 'ملف المريض والتقييم السريري')}
@@ -349,9 +376,8 @@ function page1(p) {
     <div class="f"><label>الجنس:</label><span><label class="chk"><input type="radio" name="g" data-k="gender" value="ذكر" ${p.gender === 'ذكر' ? 'checked' : ''}>ذكر</label><label class="chk"><input type="radio" name="g" data-k="gender" value="أنثى" ${p.gender === 'أنثى' ? 'checked' : ''}>أنثى</label></span></div>
     ${hidePhone() ? '' : inp('phone', 'رقم الهاتف', 'tel', p.phone)}${inp('job', 'المهنة', 'text', p.job)}${inp('evalDate', 'تاريخ التقييم', 'date', p.evalDate)}
   </div>
-  <div class="box"><div class="box-t">الشكوى الرئيسية والتاريخ الصحي</div><div class="box-b">
-    <div class="grid2"><div class="fcol"><span class="lbl">الشكوى الرئيسية</span>${ta('complaint', 2, p.complaint)}</div>
-    <div class="fcol"><span class="lbl">الأمراض المزمنة / الأدوية / العمليات السابقة</span>${ta('chronic', 2, p.chronic)}</div></div>
+  <div class="box"><div class="box-t">📝 ملخص الاستبيان: المشكلة الأساسية وسبب الزيارة والتاريخ الطبي<span class="spacer"></span><button class="btn sm light keep" type="button" data-go="p/${p.id}/0">✏️ تعديل في الاستبيان</button></div><div class="box-b">
+    <div id="iqSum">${iqSummaryHTML(p)}</div>
     <div class="fcol" style="margin-top:10px"><span class="lbl lbl-mic">القصة المرضية ${micBtn('history')}</span>${ta('history', 4, p.history)}</div>
   </div></div>
   <div class="box"><div class="box-t lbl-mic">التقييم السريري ${micBtn('clinical')}</div><div class="box-b">${ta('clinical', 6, p.clinical)}</div></div>
@@ -370,6 +396,7 @@ function page1(p) {
     <div class="fcol"><span class="lbl lbl-mic">القيود / الصعوبات الحالية ${micBtn('limits')}</span>${ta('limits', 3, p.limits)}</div>
   </div></div>
   <div class="sign">${inp('notes', 'ملاحظات عامة', 'text', p.notes)}${inp('therapist', 'اسم / توقيع المعالج', 'text', p.therapist)}</div>
+  ${filesBoxHTML(p)}
   </div>
   <div class="row"><span class="spacer"></span><button class="btn big" data-go="p/${p.id}/2">التالي: الخطة العلاجية ←</button></div>`;
 }
@@ -471,7 +498,7 @@ function bindPatient(p, tab) {
     if (k === 'iq_flags') { if (el.dataset.none && el.checked) a = ['لا يوجد']; else if (el.checked) a = a.filter(x => x !== 'لا يوجد');
       $$('[data-arr="iq_flags"]').forEach(x => { x.checked = a.includes(x.value); }); }
     p[k] = a; touch(k); refreshAlerts(); }));
-  const refreshAlerts = () => { const box = $('#alerts'); if (box) box.outerHTML = alertsHTML(p); const rb = $('#riskBox'); if (rb) rb.innerHTML = riskBoxHTML(p); };
+  const refreshAlerts = () => { const box = $('#alerts'); if (box) box.outerHTML = alertsHTML(p); const sm = $('#iqSum'); if (sm) sm.innerHTML = iqSummaryHTML(p); const rb = $('#riskBox'); if (rb) rb.innerHTML = riskBoxHTML(p); };
   curP = p;
   $$('[data-k^="iq_"]').forEach(el => el.addEventListener('change', refreshAlerts));
   $$('[data-pt]').forEach(el => el.addEventListener('change', () => { const v = el.dataset.pt; p.painType = p.painType.filter(x => x !== v); if (el.checked) p.painType.push(v); touch('painType'); }));
@@ -516,7 +543,7 @@ function bindPatient(p, tab) {
       if (el.type === 'radio') el.checked = el.value === v; else if (el.value !== (v == null ? '' : String(v))) el.value = v == null ? '' : v; });
     if (pain) drawPain();
     $$('#app .scale[data-scale]').forEach(box => paintScale(box, p[box.dataset.scale]));
-    if (tab === '3' && progRedraw && $('#modal').classList.contains('hidden')) progRedraw();
+    if ($('#modal').classList.contains('hidden')) { if (tab === '3' && progRedraw) progRedraw(); else if (filesRedraw) filesRedraw(); }
     $$('[data-arr]').forEach(el => { el.checked = arrOf(p, el.dataset.arr).includes(el.value); }); refreshAlerts();
     $$('[data-pt]').forEach(el => { el.checked = p.painType.includes(el.dataset.pt); });
     $$('[data-s]').forEach(el => { if (el !== document.activeElement) el.value = p.sessions[+el.dataset.s][el.dataset.f] || ''; });
@@ -527,6 +554,7 @@ function bindPatient(p, tab) {
     if (tab === '2' && nl !== lastLists && $('#modal').classList.contains('hidden')) { lastLists = nl; redrawLists(); }
     $('#sv').textContent = '↻ تم التحديث من جهاز آخر';
   } };
+  if (tab === '1') bindFiles(p);
   if (tab === '3') return bindProgress(p);
   if (tab !== '2') return;
   function redrawLists() { $('#devList').innerHTML = devListHTML(p); $('#exList').innerHTML = exListHTML(p); bindLists();
@@ -559,7 +587,7 @@ const scaleHTML = (k, v) => { const S = SCALES[k]; return `<div class="scale" da
 function paintScale(box, v) { const k = box.dataset.scale; $$('button', box).forEach(b => { const on = +b.dataset.v === v; b.classList.toggle('on', on); b.style.background = on ? scaleColor(k, +b.dataset.v) : ''; }); }
 const STAGES = [['before', 'قبل العلاج'], ['during', 'أثناء العلاج'], ['after', 'بعد العلاج (إعادة التقييم)'], ['report', 'تقارير / صور أشعة'], ['other', 'أخرى']];
 const STG = Object.fromEntries(STAGES);
-let progRedraw = null;
+let progRedraw = null, filesRedraw = null;
 
 /* نقاط التطور: التقييم الأولي + قياسات الجلسات */
 function progPoints(p) {
@@ -627,11 +655,30 @@ function page3(p) {
   return `<div class="sheet" id="progPage">${head('تطور الحالة', 'القياسات بعد كل جلسة • الصور قبل وبعد العلاج')}
     <div class="row" style="margin-bottom:12px"><button class="btn" id="addMeas" type="button">➕ تسجيل قياسات جلسة</button><span class="spacer"></span><button class="btn light keep" id="prtProg" type="button">🖨️ تقرير تطور الحالة</button></div>
     <div id="progBody"></div>
-    <div class="box" style="margin-top:16px"><div class="box-t">📷 الصور والملفات <span class="cnt" id="fcnt">${(p.files || []).length}</span><span class="spacer"></span><button class="btn sm keep" id="cmp" type="button">🔍 مقارنة قبل / بعد</button></div>
-      <div class="box-b"><div class="row upl" style="margin-bottom:10px"><span class="lbl">تصنيف الملف:</span><select id="fstage" class="sel">${STAGES.map(([k, t]) => `<option value="${k}">${t}</option>`).join('')}</select>
-        <label class="btn" style="cursor:pointer">⬆️ رفع صور أو ملفات<input type="file" id="fup" multiple accept="image/*,application/pdf,video/*,.doc,.docx" hidden></label><span id="fprog" class="hint"></span></div>
-      <div id="fgal"></div></div></div>
+    ${filesBoxHTML(p)}
   </div>`;
+}
+function filesBoxHTML(p) {
+  return `<div class="box files-box" style="margin-top:16px"><div class="box-t">📷 الصور والتقارير والملفات <span class="cnt" data-fcnt>${(p.files || []).length}</span><span class="spacer"></span><button class="btn sm keep" data-cmp type="button">🔍 مقارنة قبل / بعد</button></div>
+    <div class="box-b">${canFiles(p) ? `<div class="row upl" style="margin-bottom:10px"><span class="lbl">تصنيف الملف:</span><select data-fstage class="sel keep">${STAGES.map(([k, t]) => `<option value="${k}">${t}</option>`).join('')}</select>
+      <label class="btn" style="cursor:pointer">⬆️ رفع صور أو ملفات<input type="file" data-fup class="keep" multiple accept="image/*,application/pdf,video/*,.doc,.docx" hidden></label><span data-fprog class="hint"></span></div>` : ''}
+    <div data-fgal></div></div></div>`;
+}
+/* ربط قسم الصور والملفات (يعمل في صفحة التقييم وصفحة تطور الحالة) */
+function bindFiles(p, after) {
+  const box = $('#app .files-box'); if (!box) return;
+  const draw = () => {
+    $('[data-fgal]', box).innerHTML = galleryHTML(p); $('[data-fcnt]', box).textContent = (p.files || []).length;
+    const me = DB.me && DB.me.user;
+    $$('[data-fdel]', box).forEach(b => { const f = (p.files || []).find(x => x.id === b.dataset.fdel); if (!canEditP(p) && !(f && f.u && f.u === me)) b.remove(); });
+    $$('[data-fopen]', box).forEach(a => a.onclick = e => { e.preventDefault(); const f = p.files.find(x => x.id === a.dataset.fopen); if (f) openFile(p, f); });
+    $$('[data-fdel]', box).forEach(b => b.onclick = () => confirmDel('حذف هذا الملف من ملف المريض؟', () => { p.files = p.files.filter(x => x.id !== b.dataset.fdel); DB.savePatient(p, ['files']); draw(); }));
+    hydrateImgs(p, box);
+  };
+  draw(); filesRedraw = draw;
+  $('[data-cmp]', box).onclick = () => compareModal(p);
+  const up = $('[data-fup]', box);
+  if (up) up.onchange = async e => { const fs = [...e.target.files]; e.target.value = ''; if (fs.length) { await uploadFiles(p, fs, $('[data-fstage]', box).value, $('[data-fprog]', box)); draw(); after && after(); } };
 }
 function galleryHTML(p) {
   const F = p.files || []; if (!F.length) return '<div class="empty">لا توجد صور أو ملفات بعد. صوّر المريض قبل بدء العلاج، ثم بعد إعادة التقييم لمقارنة النتيجة.</div>';
@@ -656,20 +703,20 @@ function shrinkImage(file, maxD, q) {
       c.getContext('2d').drawImage(im, 0, 0, c.width, c.height); URL.revokeObjectURL(url); c.toBlob(b => ok(b || file), 'image/jpeg', q); };
     im.onerror = () => { URL.revokeObjectURL(url); ok(file); }; im.src = url; });
 }
-async function uploadFiles(p, files, stage) {
+async function uploadFiles(p, files, stage, prog) {
   if (DB.mode === 'server' && !DB.online) return toast('رفع الملفات يحتاج الاتصال بخادم المركز');
   let n = 0;
   for (const f of files) {
-    $('#fprog') && ($('#fprog').textContent = `جارٍ رفع ${n + 1} من ${files.length}...`);
+    prog && (prog.textContent = `جارٍ رفع ${n + 1} من ${files.length}...`);
     let blob = f, name = f.name || 'file';
     if (/^image\/(jpeg|png|webp|bmp)/.test(f.type)) { blob = await shrinkImage(f, DB.mode === 'server' ? 1800 : 1100, DB.mode === 'server' ? 0.85 : 0.72); if (blob !== f) name = name.replace(/\.\w+$/, '') + '.jpg'; }
     if (blob.size > 50e6) { toast('الملف «' + name + '» أكبر من 50 ميغا'); continue; }
     try { const r = await DB.uploadFile(p.section, p.id, blob, name);
-      p.files = p.files || []; p.files.push({ id: r.id, name, type: blob.type || f.type || '', size: r.size, stage, date: today(), by: myName() || DB.label(), at: new Date().toISOString() });
+      p.files = p.files || []; p.files.push({ id: r.id, name, type: blob.type || f.type || '', size: r.size, stage, date: today(), by: myName() || DB.label(), u: (DB.me && DB.me.user) || DB.role || '', at: new Date().toISOString() });
       await DB.savePatient(p, ['files']); n++;
     } catch (e) { toast(e.code === 'denied' ? '🔒 لا تملك صلاحية تعديل هذا الملف' : e.code === 'big' ? 'الملف كبير جداً لهذه النسخة — استخدم نظام المركز' : e.code === 'offline' ? 'لا يوجد اتصال بخادم المركز' : 'تعذّر رفع «' + name + '»'); }
   }
-  $('#fprog') && ($('#fprog').textContent = '');
+  prog && (prog.textContent = '');
   if (n) toast('تم رفع ' + n + ' ملف وحفظه في ملف المريض');
 }
 function compareModal(p) {
@@ -723,20 +770,14 @@ function progressModal(p, preset) {
 function bindProgress(p) {
   const draw = () => {
     $('#progBody').innerHTML = `${summaryHTML(p)}${chartsHTML(p)}${progPoints(p).length ? `<div class="lbl" style="margin:14px 0 6px">📋 جدول القياسات</div><div class="fin-tbl">${progTableHTML(p, canEditP(p))}</div>` : ''}`;
-    $('#fgal').innerHTML = galleryHTML(p); $('#fcnt').textContent = (p.files || []).length;
-    if (!canEditP(p)) $$('[data-pedit], [data-pdel], [data-fdel]').forEach(el => el.remove());
+    if (!canEditP(p)) $$('[data-pedit], [data-pdel]').forEach(el => el.remove());
     $$('#progBody [data-go]').forEach(b => b.onclick = () => go(b.dataset.go));
     $$('[data-pedit]').forEach(b => b.onclick = () => progressModal(p, { id: b.dataset.pedit }));
     $$('[data-pdel]').forEach(b => b.onclick = () => { if (!confirmDel('حذف هذا القياس؟', () => { p.progress = p.progress.filter(x => x.id !== b.dataset.pdel); DB.savePatient(p, ['progress']); draw(); })) return; });
-    $$('[data-fopen]').forEach(a => a.onclick = e => { e.preventDefault(); const f = p.files.find(x => x.id === a.dataset.fopen); if (f) openFile(p, f); });
-    $$('[data-fdel]').forEach(b => b.onclick = () => confirmDel('حذف هذا الملف من ملف المريض؟', () => { p.files = p.files.filter(x => x.id !== b.dataset.fdel); DB.savePatient(p, ['files']); draw(); }));
-    hydrateImgs(p, $('#fgal'));
   };
-  progRedraw = draw; draw();
+  progRedraw = () => { draw(); filesRedraw && filesRedraw(); }; draw(); bindFiles(p);
   $('#addMeas').onclick = () => progressModal(p);
   $('#prtProg').onclick = () => printProgress(p);
-  $('#cmp').onclick = () => compareModal(p);
-  $('#fup').onchange = async e => { const fs = [...e.target.files]; e.target.value = ''; if (fs.length) { await uploadFiles(p, fs, $('#fstage').value); draw(); } };
 }
 function confirmDel(msg, fn) {
   openModal(`<div class="modal-h"><h3>${esc(msg)}</h3></div><div class="row"><button class="btn danger" id="yes">نعم، احذف</button><button class="btn ghost" id="no">إلغاء</button></div>`);
@@ -752,7 +793,7 @@ async function printProgress(p) {
   const ths = [...new Set(progPoints(p).map(r => r.by).filter(Boolean).concat(sessionsOf(p).map(x => x.by).filter(Boolean)))];
   $('#print').innerHTML = `<div class="pg sheet rep">${head('تقرير تطور الحالة', esc(p.name || ''))}
     <div class="grid3" style="margin-bottom:8px">${pv('اسم المريض', p.name)}${pv('رقم الملف', p.fileNo)}${pv('العمر', p.age)}${pv('تاريخ التقييم الأولي', p.evalDate)}${pv('الجلسات المنفذة', String(sessionsOf(p).length))}${pv('المعالج', ths.join('، ') || p.therapist)}</div>
-    ${pv('الشكوى الرئيسية', p.complaint)}
+    ${pv('سبب الزيارة', reasonOf(p))}
     <div class="box"><div class="box-t">ملخص التحسن</div><div class="box-b">${summaryHTML(p)}</div></div>
     ${chartsHTML(p)}
     ${progTableHTML(p, false)}
@@ -767,11 +808,13 @@ async function printProgress(p) {
 function makeReadOnly() {
   const sh = $$('#app .sheet'); if (!sh.length) return;
   sh[0].insertAdjacentHTML('beforebegin', '<div class="alert amber">🔒 هذا الملف للعرض فقط — لا تملك صلاحية تعديله. تواصل مع الإدارة.</div>');
-  $$('#app .sheet input, #app .sheet textarea, #app .sheet select, #app .sheet button, #app .pain button, #app .mic').forEach(el => { if (!el.classList.contains('keep')) el.disabled = true; });
-  $$('#addDev, #addEx, [data-rdev], [data-edev], [data-rex], #addSessPay, #addMeas, #addMeas2, .upl, [data-pedit], [data-pdel], [data-fdel]').forEach(el => el.remove());
+  const fileOK = curP && canFiles(curP);
+  $$('#app .sheet input, #app .sheet textarea, #app .sheet select, #app .sheet button, #app .pain button, #app .mic').forEach(el => { if (!el.classList.contains('keep') && !(fileOK && el.closest('.files-box'))) el.disabled = true; });
+  $$('#addDev, #addEx, [data-rdev], [data-edev], [data-rex], #addSessPay, #addMeas, #addMeas2, [data-pedit], [data-pdel]').forEach(el => el.remove());
+  if (!fileOK) $$('#app .upl').forEach(el => el.remove());
   livePatient && (livePatient.apply = (orig => function () { orig.call(this); makeReadOnlyInputs(); })(livePatient.apply));
 }
-function makeReadOnlyInputs() { $$('#app .sheet input, #app .sheet textarea, #app .sheet select').forEach(el => { el.disabled = true; }); }
+function makeReadOnlyInputs() { $$('#app .sheet input, #app .sheet textarea, #app .sheet select').forEach(el => { if (!el.closest('.files-box')) el.disabled = true; }); }
 /* ---------- voice to text (التسجيل الصوتي وتحويله لكتابة) ----------
    على خادم المركز: التحويل يتم على لابتوب المركز بدون إنترنت (whisper).
    على النسخة الأونلاين: خدمة المتصفح (تحتاج إنترنت). */
@@ -1265,10 +1308,10 @@ function permsModal(u) {
       <div class="lbl-s">الأقسام التي تظهر له:</div>
       <div class="permgrid">${PERM_LIST.slice(0, 6).map(([k, t]) => `<label class="chk perm"><input type="checkbox" data-pk="${k}" ${p[k] ? 'checked' : ''}>${t}</label>`).join('')}</div>
       <div class="lbl-s" style="margin-top:10px">ملفات المرضى:</div>
-      <div class="permgrid">${PERM_LIST.slice(11, 14).map(([k, t]) => `<label class="chk perm"><input type="checkbox" data-pk="${k}" ${p[k] ? 'checked' : ''}>${t}</label>`).join('')}</div>
+      <div class="permgrid">${PERM_LIST.slice(11, 14).concat(PERM_LIST.slice(15)).map(([k, t]) => `<label class="chk perm"><input type="checkbox" data-pk="${k}" ${p[k] ? 'checked' : ''}>${t}</label>`).join('')}</div>
       <p class="hint" style="margin:4px 0 0">لمنع المعالج من تعديل أي ملف: أزل «تعديل ملفات كل المرضى» و«تعديل ملفات مرضاه فقط». يبقى قادراً على مشاهدة الملفات.</p>
       <div class="lbl-s" style="margin-top:10px">صلاحيات إضافية:</div>
-      <div class="permgrid">${PERM_LIST.slice(6, 11).concat(PERM_LIST.slice(14)).map(([k, t]) => `<label class="chk perm"><input type="checkbox" data-pk="${k}" ${p[k] ? 'checked' : ''}>${t}</label>`).join('')}</div>
+      <div class="permgrid">${PERM_LIST.slice(6, 11).concat(PERM_LIST.slice(14, 15)).map(([k, t]) => `<label class="chk perm"><input type="checkbox" data-pk="${k}" ${p[k] ? 'checked' : ''}>${t}</label>`).join('')}</div>
       <p class="hint">بدون «إدارة مواعيد كل المعالجين»: يحجز ويعدّل مواعيده فقط ولا يحذف إلا ما أضافه بنفسه. تُطبَّق الصلاحيات فوراً على الخادم، وتظهر عنده عند تحديث الصفحة.</p>
       <div class="modal-f"><button class="btn big" id="ok">حفظ الصلاحيات</button><button class="btn ghost" id="cn">إلغاء</button></div>`);
     $$('[data-pk]').forEach(c => c.onchange = () => { p[c.dataset.pk] = c.checked; });
@@ -1422,7 +1465,7 @@ function printPatient(p, exOnly) {
       <div class="box"><div class="box-b grid4">${pv('رقم الملف', p.fileNo)}${pv('الخزانة / الدرج', p.cabinet)}${pv('الرف', p.shelf)}${pv('رقم التسلسل', p.serial)}</div></div>
       <div class="grid3" style="margin-bottom:10px">${pv('الاسم الكامل', p.name)}${pv('العمر', p.age)}<div class="f"><label>الجنس:</label><div class="pv">${p.gender === 'ذكر' ? '☑' : '☐'} ذكر &nbsp; ${p.gender === 'أنثى' ? '☑' : '☐'} أنثى</div></div>
         ${pv('رقم الهاتف', p.phone)}${pv('المهنة', p.job)}${pv('تاريخ التقييم', p.evalDate)}</div>
-      <div class="box"><div class="box-t">الشكوى الرئيسية والتاريخ الصحي</div><div class="box-b"><div class="grid2"><div class="fcol"><span class="lbl">الشكوى الرئيسية</span>${pt(p.complaint, 44)}</div><div class="fcol"><span class="lbl">الأمراض المزمنة / الأدوية / العمليات السابقة</span>${pt(p.chronic, 44)}</div></div>
+      <div class="box"><div class="box-t">ملخص الاستبيان: المشكلة الأساسية وسبب الزيارة والتاريخ الطبي</div><div class="box-b">${iqSummary(p).map(([k, v]) => `<div class="pr-sum"><b>${esc(k)}:</b> ${esc(v)}</div>`).join('') || pt('', 44)}
         <div class="fcol" style="margin-top:6px"><span class="lbl">القصة المرضية</span>${pt(p.history, 88)}</div></div></div>
       <div class="box"><div class="box-t">التقييم السريري</div><div class="box-b">${pt(p.clinical, 132)}</div></div>
       <div class="box"><div class="box-t">الأعراض الحالية ومقياس الألم</div><div class="box-b grid2"><div class="fcol"><span class="lbl">الأعراض الحالية</span>${pt(p.symptoms, 66)}</div>

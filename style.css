@@ -375,6 +375,9 @@ table.prog tr.base{background:#f3f8fa} table.prog tr.re{background:#eef8f2}
 .rem-red{color:var(--danger);font-size:18px} .ok-green{color:var(--ok)}
 @media (max-width:640px){.cmp{grid-template-columns:1fr}}
 
+.iqsum{display:flex;flex-direction:column;gap:6px;background:#f6fafb;border:1px solid var(--line);border-radius:10px;padding:10px 12px}
+.iqsum b{color:var(--navy)} .iqsum .red span{color:var(--danger);font-weight:700}
+.pr-sum{font-size:9.5pt;margin:1px 0} .pr-sum b{color:var(--navy)}
 /* ---------- PRINT (A4, like the paper file) ---------- */
 #print{display:none}
 @media print{
