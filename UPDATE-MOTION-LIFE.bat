@@ -33,6 +33,7 @@ powercfg /change standby-timeout-ac 0 >nul 2>&1
 echo   [6/6] Starting the server...
 start "Motion Life - Server" /min cmd /c "cd /d "%DEST%" && node server.js"
 timeout /t 4 >nul
+if exist "%DEST%\data\ca.pem" certutil -addstore -f Root "%DEST%\data\ca.pem" >nul 2>&1
 start "" http://localhost:8080
 echo.
 echo   ==================================================

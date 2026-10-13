@@ -1641,7 +1641,8 @@ function settingsView() {
     <div class="pform"><div class="fcol"><span class="lbl">كلمة المرور الحالية</span><input id="op" type="password" dir="ltr"></div>
     <div class="fcol"><span class="lbl">كلمة المرور الجديدة (4 أحرف أو أرقام على الأقل)</span><input id="np" type="password" dir="ltr"></div></div>
     <button class="btn" id="saveAuth" style="margin-top:12px">حفظ</button></div>
-  <div class="sheet"><button class="btn ghost" id="out">🚪 تسجيل الخروج</button></div>`;
+${DB.mode === 'server' ? `<div class="sheet"><h3 style="margin-top:0">🔒 شهادة المركز</h3><p style="margin-top:0;color:var(--muted)">ثبّتها مرة واحدة على كل جهاز حتى يختفي تحذير «الاتصال غير آمن».</p><a class="btn light" href="/cert" target="_blank">فتح صفحة شهادة المركز وطريقة التثبيت</a></div>` : ''}
+    <div class="sheet"><button class="btn ghost" id="out">🚪 تسجيل الخروج</button></div>`;
   return `<h2 style="margin:0 0 14px;color:var(--navy)">الإعدادات</h2>
   <div class="sheet"><h3 style="margin-top:0">🔑 تغيير كلمة المرور — ${esc(DB.label())}</h3>
     <div class="pform"><div class="fcol"><span class="lbl">كلمة المرور الحالية</span><input id="op" type="password" dir="ltr"></div>
@@ -1661,7 +1662,8 @@ function settingsView() {
     <p style="color:var(--muted);margin-top:0">تنزيل نسخة من ملفات ومواعيد ${esc(DB.label())} لحفظها عندك.</p>
     <div class="row"><button class="btn" id="exp">⬇️ تنزيل نسخة احتياطية</button>
     <label class="btn light" style="cursor:pointer">⬆️ استرجاع نسخة<input type="file" id="imp" accept=".json,application/json" hidden></label></div></div>
-  <div class="sheet"><button class="btn ghost" id="out">🚪 تسجيل الخروج</button></div>`;
+${DB.mode === 'server' ? `<div class="sheet"><h3 style="margin-top:0">🔒 شهادة المركز</h3><p style="margin-top:0;color:var(--muted)">ثبّتها مرة واحدة على كل جهاز حتى يختفي تحذير «الاتصال غير آمن».</p><a class="btn light" href="/cert" target="_blank">فتح صفحة شهادة المركز وطريقة التثبيت</a></div>` : ''}
+    <div class="sheet"><button class="btn ghost" id="out">🚪 تسجيل الخروج</button></div>`;
 }
 let accCache = null;
 const permLevel = p => !p ? '' : PERM_LIST.every(([k]) => p[k]) ? 'full' : PERM_LIST.every(([k]) => !!p[k] === !!DEF_PERMS[k]) ? 'basic' : 'extra';

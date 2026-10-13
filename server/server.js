@@ -374,13 +374,46 @@ function serveStatic(req, res, url) {
     res.end(buf);
   });
 }
+/* شهادة المركز للتنزيل + صفحة شرح التثبيت (تعمل على http بدون تحويل) */
+const CA_FILE = path.join(DATA, 'ca.pem'), CA_KEY = path.join(DATA, 'ca-key.pem');
+function serveCert(req, res, p) {
+  if (p === '/motion-life-ca.crt') {
+    if (!fs.existsSync(CA_FILE)) { res.writeHead(404); return res.end(); }
+    const der = Buffer.from(fs.readFileSync(CA_FILE, 'utf8').replace(/-----[^-]+-----|\s/g, ''), 'base64');
+    res.writeHead(200, { 'Content-Type': 'application/x-x509-ca-cert', 'Content-Disposition': 'attachment; filename="motion-life-ca.crt"', 'Cache-Control': 'no-store' });
+    return res.end(der);
+  }
+  res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' });
+  res.end(`<!doctype html><html lang="ar" dir="rtl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>شهادة المركز — Motion Life</title>
+<style>body{font-family:Tahoma,Arial,sans-serif;background:#f3f6f8;color:#1d2b36;margin:0;padding:16px;line-height:1.8}main{max-width:760px;margin:auto}.card{background:#fff;border:1px solid #c9d8e0;border-radius:14px;padding:16px 20px;margin:12px 0}
+h1{color:#0f2c4c;font-size:24px}h2{color:#13788a;font-size:19px;margin:0 0 6px}.btn{display:inline-block;background:#13788a;color:#fff;text-decoration:none;font-weight:700;font-size:20px;padding:14px 22px;border-radius:12px}ol{padding-inline-start:22px}b{color:#0f2c4c}.n{color:#5f7180;font-size:14px}</style></head><body><main>
+<h1>🔒 شهادة مركز Motion Life</h1>
+<div class="card"><p>ثبّت هذه الشهادة <b>مرة واحدة</b> على كل جهاز (لابتوب أو تاب)، بعدها يفتح النظام على <b dir="ltr">https://192.168.1.40:8443</b> بدون رسالة «الاتصال غير آمن».</p>
+<p><a class="btn" href="/motion-life-ca.crt">⬇️ تنزيل شهادة المركز</a></p><p class="n">الشهادة خاصة بشبكة المركز فقط ولا تعمل خارجها.</p></div>
+<div class="card"><h2>💻 على اللابتوب (ويندوز)</h2><ol>
+<li>نزّل الشهادة من الزر بالأعلى، ثم افتح الملف <b>motion-life-ca.crt</b> (دبل كليك).</li>
+<li>اضغط <b>تثبيت الشهادة (Install Certificate)</b>.</li>
+<li>اختر <b>المستخدم الحالي (Current User)</b> ثم <b>التالي</b>.</li>
+<li>اختر <b>وضع كل الشهادات في المخزن التالي</b> ثم <b>استعراض (Browse)</b> واختر <b>Trusted Root Certification Authorities</b> (المراجع المصدقة الجذر الموثوق بها).</li>
+<li><b>التالي</b> ثم <b>إنهاء</b>، وعند رسالة التحذير اضغط <b>نعم (Yes)</b>.</li>
+<li>أغلق Chrome كلياً وافتحه من جديد.</li></ol></div>
+<div class="card"><h2>📱 على التاب (أندرويد)</h2><ol>
+<li>نزّل الشهادة من الزر بالأعلى.</li>
+<li>افتح <b>الإعدادات</b> ← <b>الأمان والخصوصية</b> (أو الأمان) ← <b>إعدادات أمان أخرى</b> ← <b>التشفير وبيانات الاعتماد</b>.</li>
+<li>اختر <b>تثبيت شهادة</b> ← <b>شهادة CA</b> ← <b>التثبيت على أي حال</b>.</li>
+<li>اختر الملف <b>motion-life-ca.crt</b> من التنزيلات. (يطلب الجهاز قفل شاشة/رمز إذا لم يكن موجوداً.)</li>
+<li>أغلق Chrome وافتحه من جديد.</li></ol>
+<p class="n">في أجهزة سامسونج: الإعدادات ← الأمان والخصوصية ← إعدادات أمان أخرى ← تثبيت من وحدة تخزين الجهاز ← شهادة CA.</p></div>
+<div class="card"><a href="https://192.168.1.40:8443">← فتح النظام</a></div></main></body></html>`);
+}
 const isLocal = req => { const a = (req.socket.remoteAddress || '').replace('::ffff:', ''); return a === '127.0.0.1' || a === '::1'; };
 const handler = (req, res) => {
   const url = new URL(req.url, 'http://local');
-  if (!req.headers[':scheme'] && !(req.socket && req.socket.encrypted) && httpsOn && !isLocal(req) && !url.pathname.startsWith('/api/') && req.method === 'GET') {   // الأجهزة الأخرى → الرابط الآمن (للميكروفون)
+  if (!req.headers[':scheme'] && !(req.socket && req.socket.encrypted) && httpsOn && !isLocal(req) && !url.pathname.startsWith('/api/') && url.pathname !== '/cert' && url.pathname !== '/motion-life-ca.crt' && req.method === 'GET') {   // الأجهزة الأخرى → الرابط الآمن (للميكروفون)
     const host = (req.headers.host || '').split(':')[0];
     res.writeHead(302, { Location: 'https://' + host + ':' + HTTPS_PORT + url.pathname + url.search }); return res.end();
   }
+  if (url.pathname === '/cert' || url.pathname === '/motion-life-ca.crt') return serveCert(req, res, url.pathname);
   if (url.pathname.startsWith('/api/')) return api(req, res, url).catch(e => { console.error(e); try { send(res, 500, { error: 'server' }); } catch (x) {} });
   serveStatic(req, res, url);
 };
@@ -403,10 +436,16 @@ httpSrv.listen(PORT, '0.0.0.0', () => {
 let httpsOn = false;
 try {
   const kf = path.join(DATA, 'key.pem'), cf = path.join(DATA, 'cert.pem'), ipf = path.join(DATA, 'cert-ips.txt');
-  const ips = lanAddresses().sort().join(',');
-  if (!fs.existsSync(kf) || !fs.existsSync(cf) || (fs.existsSync(ipf) ? fs.readFileSync(ipf, 'utf8') : '') !== ips) {   // تُجدّد إذا تغيّر عنوان اللابتوب
-    const pems = require('./selfcert')('motion-life.local', lanAddresses(), 3650);
-    fs.writeFileSync(kf, pems.key); fs.writeFileSync(cf, pems.cert); fs.writeFileSync(ipf, ips);
+  const SC = require('./selfcert');
+  // شهادة المركز: تُنشأ مرة واحدة فقط (تُثبَّت على الأجهزة)
+  if (!fs.existsSync(CA_FILE) || !fs.existsSync(CA_KEY)) { const ca = SC.makeCA(); fs.writeFileSync(CA_KEY, ca.key); fs.writeFileSync(CA_FILE, ca.cert); }
+  const ca = { cert: fs.readFileSync(CA_FILE, 'utf8'), key: fs.readFileSync(CA_KEY, 'utf8') };
+  // شهادة الخادم: تُجدّد إذا تغيّرت العناوين أو مضى عليها 11 شهراً (بدون الحاجة لإعادة التثبيت على الأجهزة)
+  const ips = lanAddresses().sort(), stamp = (() => { try { return JSON.parse(fs.readFileSync(ipf, 'utf8')); } catch (e) { return {}; } })();
+  const old = !stamp.at || Date.now() - stamp.at > 330 * 86400000;
+  if (!fs.existsSync(kf) || !fs.existsSync(cf) || stamp.v !== 2 || stamp.ips !== ips.join(',') || old) {
+    const pems = SC.makeServer(ca, 'motion-life.local', ['192.168.1.40'].concat(ips));
+    fs.writeFileSync(kf, pems.key); fs.writeFileSync(cf, pems.cert); fs.writeFileSync(ipf, JSON.stringify({ v: 2, ips: ips.join(','), at: Date.now() }));
   }
   // HTTP/2: بدون حد الـ 6 اتصالات للمتصفح (كان يسبب تعليق النظام عند فتح عدة نوافذ/تبويبات)
   const h2 = http2.createSecureServer({ key: fs.readFileSync(kf), cert: fs.readFileSync(cf), allowHTTP1: true }, handler);
