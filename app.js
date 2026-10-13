@@ -66,6 +66,12 @@ function sessionsOf(p) {
 const linkedTo = (p, tid, name) => (!!tid && p.ownerTid === tid) || [...DB.appts.values()].some(a => a.patientId === p.id && (a.tid === tid || (!a.tid && a.by === name))) || (p.sessions || []).some(r => r.by && r.by === name);
 const getP = id => DB.patients.get(id);
 /* المعالج المسؤول عن الحالة (تحدده الإدارة) */
+function devFileHTML(p) {
+  const D = keyDevsOf(p); if (!D.length) return '';
+  const up = [...DB.appts.values()].filter(x => x.patientId === p.id && x.date >= today() && liveAppt(x)).sort((a, b) => (a.date + a.time).localeCompare(b.date + b.time));
+  const X = up.filter(x => devConflicts(x).length);
+  return `${D.map(c => devTag(c)).join('')}<span class="hint"> مواعيده القادمة: ${up.length}${X.length ? ` · <b class="xw">⚠️ ${X.length} متضارب</b>` : ''}</span>`;
+}
 const ownerOf = p => p && p.ownerTid ? therapists(p.section).find(t => t.id === p.ownerTid) || null : null;
 const canSetOwner = () => DB.isManager && DB.isManager();
 function ownerChip(p, big) {
@@ -221,22 +227,24 @@ function pCard(p) {
   const done = p.sessions.filter(s => s.date).length;
   const ow = ownerOf(p);
   return `<div class="pcard" data-id="${p.id}" style="${ow ? '--oc:' + ow.color : ''}"><div class="av">${esc(ini)}</div><div style="flex:1">
-    <b>${esc(p.name || 'بدون اسم')}</b> ${payBadge(p)} ${ownerChip(p)}<div class="m">رقم الملف: ${esc(p.fileNo)} ·${hidePhone() ? '' : ' ' + esc(p.phone || '—') + ' ·'} ${esc(reasonOf(p).slice(0, 40))}</div></div>
+    <b>${esc(p.name || 'بدون اسم')}</b> ${payBadge(p)} ${ownerChip(p)} ${devTags(p)}<div class="m">رقم الملف: ${esc(p.fileNo)} ·${hidePhone() ? '' : ' ' + esc(p.phone || '—') + ' ·'} ${esc(reasonOf(p).slice(0, 40))}</div></div>
     ${multiSec() ? `<span class="badge sec-${p.section}">${SEC[p.section] || ''}</span>` : ''}<span class="badge">${done} / 22 جلسة</span></div>`;
 }
 
 /* ---------- patients list ---------- */
 function patientsView() {
   return `<div class="row"><h2 style="margin:0;color:var(--navy)">ملفات المرضى</h2><span class="spacer"></span><button class="btn" id="newP">➕ مريض جديد</button></div>
+  <div id="devB" style="margin-top:10px">${devBellHTML()}</div>
   <div class="row" style="margin-top:14px;gap:10px"><input class="search" id="ps" placeholder="🔍 ابحث بالاسم أو رقم الملف أو الهاتف" style="flex:1;min-width:220px">
-    <select id="pof" class="sel" title="المعالج المسؤول"><option value="">كل المعالجين</option>${TH() && myTid() ? '<option value="@me">مرضاي فقط</option>' : ''}<option value="-">بدون معالج مسؤول</option>${DB.sections().map(sec => therapists(sec).map(t => `<option value="${sec}|${t.id}">${esc(t.name)}</option>`).join('')).join('')}</select></div>
+    <select id="pof" class="sel" title="المعالج المسؤول"><option value="">كل المعالجين</option>${TH() && myTid() ? '<option value="@me">مرضاي فقط</option>' : ''}<option value="-">بدون معالج مسؤول</option><option value="#EQ15">🦴 مرضى DRX 9000</option><option value="#EQ07">🚶 مرضى R-GAIT</option>${DB.sections().map(sec => therapists(sec).map(t => `<option value="${sec}|${t.id}">${esc(t.name)}</option>`).join('')).join('')}</select></div>
   <div class="plist" id="pl"></div>`;
 }
 function bindPatients() {
   const draw = () => {
     const q = $('#ps').value.trim(), of = $('#pof').value;
-    const okO = p => !of || (of === '-' ? !ownerOf(p) : of === '@me' ? p.ownerTid === myTid() : of === p.section + '|' + p.ownerTid);
+    const okO = p => !of || (of[0] === '#' ? keyDevsOf(p).includes(of.slice(1)) : of === '-' ? !ownerOf(p) : of === '@me' ? p.ownerTid === myTid() : of === p.section + '|' + p.ownerTid);
     const list = allP().filter(p => (!q || [p.name, p.fileNo, p.phone].join(' ').includes(q)) && okO(p)).sort((a, b) => (b.updated || b.created).localeCompare(a.updated || a.created));
+    if ($('#devB')) { $('#devB').innerHTML = devBellHTML(); $('#devBell').onclick = () => devPanel(); }
     $('#pl').innerHTML = list.length ? list.map(pCard).join('') : `<div class="empty">لا توجد ملفات بعد. اضغط «مريض جديد» للبدء.</div>`;
   };
   $('#ps').addEventListener('input', draw); $('#pof').addEventListener('change', draw); draw();
@@ -251,7 +259,7 @@ const ta = (k, rows, v) => `<textarea class="lined" data-k="${k}" rows="${rows}"
 const PAIN_C = ['#2e9e5b','#4caf50','#7cb342','#c0ca33','#fdd835','#fbc02d','#ffa000','#f57c00','#ef6c00','#e64a19','#c62828'];
 
 function patientView(p, tab) {
-  const tabs = `<div class="pid-bar"><span class="pid-name">👤 <b data-live="name">${esc(p.name || 'مريض جديد')}</b></span><span>رقم الملف: <b data-live="fileNo">${esc(p.fileNo)}</b></span><span id="payB">${payBadge(p)}</span><span id="ownerB">${ownerBarHTML(p)}</span>${multiSec() ? `<span class="badge sec-${p.section}">${SEC[p.section]}</span>` : ''}</div>
+  const tabs = `<div class="pid-bar"><span class="pid-name">👤 <b data-live="name">${esc(p.name || 'مريض جديد')}</b></span><span>رقم الملف: <b data-live="fileNo">${esc(p.fileNo)}</b></span><span id="payB">${payBadge(p)}</span><span id="ownerB">${ownerBarHTML(p)}</span><span id="devP">${devFileHTML(p)}</span>${multiSec() ? `<span class="badge sec-${p.section}">${SEC[p.section]}</span>` : ''}</div>
   ${alertsHTML(p)}
   <div class="ptabs">
     <button class="tab ${tab === '0' ? 'on' : ''}" data-go="p/${p.id}/0">📝 الاستبيان الطبي السريع</button>
@@ -587,7 +595,7 @@ function bindPatient(p, tab) {
   if (tab === '1') bindFiles(p);
   if (tab === '3') return bindProgress(p);
   if (tab !== '2') return;
-  function redrawLists() { $('#devList').innerHTML = devListHTML(p); $('#exList').innerHTML = exListHTML(p); bindLists();
+  function redrawLists() { if ($('#devP')) $('#devP').innerHTML = devFileHTML(p); $('#devList').innerHTML = devListHTML(p); $('#exList').innerHTML = exListHTML(p); bindLists();
     $$('.plan-sub .cnt')[0].textContent = p.devices.length; $$('.plan-sub .cnt')[1].textContent = p.exercises.length; }
   const redraw = () => { redrawLists(); lastLists = JSON.stringify([p.devices, p.exercises]); touch('devices', 'exercises'); };
   function bindLists() {
@@ -1124,6 +1132,7 @@ function apptsView(sec, date) {
       ${date !== today() ? `<button class="btn light" data-go="appts/${sec}/${today()}">اليوم</button>` : '<span class="badge">اليوم</span>'}
     </div>
     <div class="appt-sum" id="asum"></div>
+    <div id="devB">${devBellHTML(date)}</div>
   </div>
   <div class="agrid" id="agrid"></div>`;
 }
@@ -1159,17 +1168,61 @@ function bindAppts(sec, date) {
       const isNow = isToday && now >= t && now < next;
       const past = isToday && now >= next || date < today();
       html += `<div class="slot ${items.length ? 'has' : ''} ${isNow ? 'now' : ''} ${past ? 'past' : ''}"><div class="slot-t">${t12(t)}</div><div class="slot-b">
-        ${items.map(x => { const th = thOf(sec, x); return `<button class="ap st-${x.status || 'booked'}" data-ap="${x.id}" style="--c:${th ? th.color : '#8a9aa6'}">
-          <b>${esc(x.name || 'بدون اسم')}</b>${x.sessionNo ? `<span class="sn">ج${esc(x.sessionNo)}</span>` : ''}${th ? `<span class="thn">${esc(th.name)}</span>` : (x.by ? `<span class="thn">${esc(x.by)}</span>` : '')}${x.note ? `<span>· ${esc(x.note)}</span>` : ''}<i>${ST[x.status || 'booked']}</i></button>`; }).join('')}
+        ${items.map(x => { const th = thOf(sec, x), xp = getP(x.patientId), cx = liveAppt(x) ? devConflicts(x) : []; return `<button class="ap st-${x.status || 'booked'}${cx.length ? ' devx' : ''}" data-ap="${x.id}" style="--c:${th ? th.color : '#8a9aa6'}" ${cx.length ? `title="تضارب على الجهاز مع: ${cx.map(k => esc(k.x.name) + ' ' + t12(k.x.time)).join('، ')}"` : ''}>
+          ${devTags(xp, true)}${cx.length ? '<span class="xw">⚠️ تضارب</span>' : ''}<b>${esc(x.name || 'بدون اسم')}</b>${x.sessionNo ? `<span class="sn">ج${esc(x.sessionNo)}</span>` : ''}${th ? `<span class="thn">${esc(th.name)}</span>` : (x.by ? `<span class="thn">${esc(x.by)}</span>` : '')}${x.note ? `<span>· ${esc(x.note)}</span>` : ''}<i>${ST[x.status || 'booked']}</i></button>`; }).join('')}
         <button class="add-ap ${items.length ? 'small' : ''}" data-add="${t}">${items.length ? '+' : '+ حجز موعد'}</button></div></div>`;
     });
     $('#agrid').innerHTML = html + '</div>';
+    $('#devB').innerHTML = devBellHTML(date); $('#devBell').onclick = () => devPanel(date);
     $$('[data-tf]').forEach(b => b.onclick = () => { tf = b.dataset.tf; draw(); });
     $$('[data-add]').forEach(b => b.onclick = () => apptModal({ section: sec, date, time: b.dataset.add, tid: tf || '' }));
     $$('[data-ap]').forEach(b => b.onclick = () => apptModal(DB.appts.get(b.dataset.ap)));
   };
   draw(); liveRedraw = draw;
   if (date === today()) { const n = $('.slot.now'); if (n) setTimeout(() => n.scrollIntoView({ block: 'center' }), 50); }
+}
+
+/* ---------- الأجهزة المشتركة (DRX 9000 و R-GAIT): تنبيهات وتنظيم المواعيد ---------- */
+const KEYDEV = { EQ15: { short: 'DRX', name: 'DRX 9000', ic: '🦴', c: '#7b3fd0' }, EQ07: { short: 'R-GAIT', name: 'R-GAIT', ic: '🚶', c: '#c2410c' } };
+const DEV_GAP = 30;   // دقائق: موعدان على نفس الجهاز بفارق أقل من هذا = تضارب
+const hm2m = t => { const [h, m] = String(t || '0:0').split(':').map(Number); return h * 60 + (m || 0); };
+const keyDevsOf = p => !p || p.cancelled ? [] : Object.keys(KEYDEV).filter(c => (p.devices || []).some(d => d.dev === c));
+const devTag = (c, small) => `<span class="devtag${small ? ' s' : ''}" style="--dc:${KEYDEV[c].c}" title="لديه جلسات على ${KEYDEV[c].name}">${KEYDEV[c].ic} ${KEYDEV[c].short}</span>`;
+const devTags = (p, small) => keyDevsOf(p).map(c => devTag(c, small)).join('');
+const liveAppt = x => x.status !== 'cancelled' && x.status !== 'absent';
+/* مواعيد أخرى على نفس الجهاز بنفس الوقت تقريباً */
+function devConflicts(a, pid) {
+  const p = getP(pid || a.patientId), D = keyDevsOf(p); if (!D.length || !a.date || !a.time) return [];
+  const t = hm2m(a.time), out = [];
+  [...DB.appts.values()].forEach(x => {
+    if (x.id === a.id || x.date !== a.date || !liveAppt(x) || x.patientId === (pid || a.patientId)) return;
+    if (Math.abs(hm2m(x.time) - t) >= DEV_GAP) return;
+    keyDevsOf(getP(x.patientId)).filter(c => D.includes(c)).forEach(c => out.push({ c, x }));
+  });
+  return out;
+}
+const conflictText = L => L.map(({ c, x }) => `${KEYDEV[c].ic} ${KEYDEV[c].name}: ${esc(x.name || '')} الساعة ${t12(x.time)}`).join('<br>');
+/* أيقونة الإشعار أعلى المواعيد وملفات المرضى */
+function devBellHTML(date) {
+  const d = date || today(), pts = allP();
+  return `<button class="devbell" id="devBell" type="button" title="مرضى ومواعيد الأجهزة المشتركة">🔔 ${Object.keys(KEYDEV).map(c => {
+    const P = pts.filter(p => keyDevsOf(p).includes(c));
+    const A = [...DB.appts.values()].filter(x => x.date === d && liveAppt(x) && P.some(p => p.id === x.patientId));
+    const X = A.filter(x => devConflicts(x).some(k => k.c === c)).length;
+    return `<span class="db" style="--dc:${KEYDEV[c].c}">${KEYDEV[c].ic} ${KEYDEV[c].name}: <b>${P.length}</b> مريض · <b>${A.length}</b> موعد ${d === today() ? 'اليوم' : d}${X ? ` · <b class="x">⚠️ ${X} متضارب</b>` : ''}</span>`; }).join('')}</button>`;
+}
+function devPanel(date) {
+  const d = date || today(), pts = allP(), end = addDays(d, 6);
+  openModal(`<div class="modal-h"><h3>🔔 الأجهزة المشتركة — DRX 9000 و R-GAIT</h3><span class="spacer"></span><button class="x" id="mc">×</button></div>
+    <p class="hint" style="margin-top:0">المرضى الذين في خطتهم العلاجية أحد هذين الجهازين، ومواعيدهم من ${d} إلى ${end}. يُعتبر الموعدان متضاربين إذا كانا على نفس الجهاز بفارق أقل من ${DEV_GAP} دقيقة.</p>
+    ${Object.keys(KEYDEV).map(c => { const K = KEYDEV[c], P = pts.filter(p => keyDevsOf(p).includes(c));
+      const A = [...DB.appts.values()].filter(x => x.date >= d && x.date <= end && liveAppt(x) && P.some(p => p.id === x.patientId)).sort((a, b) => (a.date + a.time).localeCompare(b.date + b.time));
+      return `<div class="devsec" style="--dc:${K.c}"><h4>${K.ic} ${K.name} <span class="cnt">${P.length} مريض</span></h4>
+        <div class="stcur">${P.map(p => `<button class="chip" data-open="${p.id}">${esc(p.name || 'بدون اسم')} <small>ملف ${esc(p.fileNo)}</small></button>`).join('') || '<span class="hint">لا يوجد</span>'}</div>
+        ${A.length ? `<table class="slog"><thead><tr><th>التاريخ</th><th>الوقت</th><th>المريض</th><th>المعالج</th><th></th></tr></thead><tbody>${A.map(x => { const X = devConflicts(x).filter(k => k.c === c);
+          return `<tr class="${X.length ? 'devx' : ''}"><td>${esc(x.date)} <small>${dayName(x.date)}</small></td><td>${t12(x.time)}</td><td>${esc(x.name || '')}</td><td>${esc((thOf(x.section, x) || {}).name || x.by || '')}</td><td>${X.length ? '⚠️ متضارب مع: ' + X.map(k => esc(k.x.name) + ' ' + t12(k.x.time)).join('، ') : ''}</td></tr>`; }).join('')}</tbody></table>` : '<div class="empty" style="padding:6px">لا توجد مواعيد في هذه الفترة.</div>'}</div>`; }).join('')}`);
+  $('#mc').onclick = closeModal;
+  $$('#modalBox [data-open]').forEach(b => b.onclick = () => { closeModal(); go('p/' + b.dataset.open + '/2'); });
 }
 
 function apptModal(a) {
@@ -1196,13 +1249,22 @@ function apptModal(a) {
       <div class="fcol" ${lockPay() ? 'style="display:none"' : ''}><span class="lbl">المبلغ المدفوع لهذه الجلسة <small class="hint">(اختياري)</small></span><input id="aam" value="${esc(a.amount)}" inputmode="numeric"></div>
       ${isNew ? '' : `<div class="fcol" style="grid-column:1/-1"><span class="lbl">حالة الموعد</span><div class="stbtns">${Object.entries(ST).map(([k, v]) => `<button type="button" class="stb st-${k} ${a.status === k ? 'on' : ''}" data-st="${k}">${v}</button>`).join('')}</div></div>`}
     </div>
+    <div id="devWarn"></div>
     <div id="histBox"></div>
     ${ro ? '<div class="alert amber" style="margin-top:10px">🔒 هذا الموعد لمعالج آخر — يمكنك مشاهدته فقط.</div>' : ''}
     ${!ro && limAppt() && !isNew && !canDel ? '<div class="alert amber" style="margin-top:10px">🔒 هذا الموعد أضافه مستخدم آخر — يمكنك تعديله لكن لا يمكنك حذفه.</div>' : ''}
     <div class="modal-f">${ro ? '' : `<button class="btn big" id="ok">${isNew ? '✓ حجز الموعد' : 'حفظ'}</button>`}<button class="btn ghost" id="cn">${ro ? 'إغلاق' : 'إلغاء'}</button><span class="spacer"></span>${canDel ? '<button class="btn danger" id="del">حذف الموعد</button>' : ''}${!isNew && a.createdBy ? `<small class="hint">أضافه: ${esc(a.createdBy)}</small>` : ''}</div>`);
   if (ro) $$('#modalBox input, #modalBox select, #modalBox .thb, #modalBox .stb').forEach(x => x.disabled = true);
   $('#asn').value = a.sessionNo || (isNew && pid ? nextSessionNo(pid) : a.sessionNo || '');
-  const linkUI = () => { const p = pid && getP(pid); const nm = $('#an').value.trim();
+  let devAck = false;
+  const devCheck = () => { const box = $('#devWarn'); if (!box) return []; const L = pid ? devConflicts({ id: a.id, date: $('#ad').value, time: $('#at').value }, pid) : [];
+    const D = keyDevsOf(getP(pid));
+    box.innerHTML = L.length ? `<div class="alert red devwarn">⚠️ <b>تنبيه تضارب على الجهاز:</b> يوجد مريض آخر على نفس الجهاز بنفس الوقت تقريباً (فارق أقل من ${DEV_GAP} دقيقة):<br>${conflictText(L)}<br><small>اختر وقتاً آخر، أو اضغط الحفظ مرة ثانية للحجز رغم التضارب.</small></div>`
+      : D.length ? `<div class="alert amber" style="margin-top:8px">${D.map(c => devTag(c)).join(' ')} هذا المريض لديه جلسات على ${D.map(c => KEYDEV[c].name).join(' و ')} — لا يوجد تضارب في هذا الوقت ✓</div>` : '';
+    if (!L.length) devAck = false; if ($('#ok') && !L.length) $('#ok').classList.remove('warn');
+    return L; };
+  $('#ad').addEventListener('change', devCheck); $('#at').addEventListener('change', devCheck);
+  const linkUI = () => { const p = pid && getP(pid); const nm = $('#an').value.trim(); setTimeout(devCheck, 0);
     $('#linkp').innerHTML = p ? `<div class="linked">✅ مرتبط بملف <b>${esc(p.name)}</b> — رقم الملف ${esc(p.fileNo)} <button class="btn light sm" id="openf">📁 فتح الملف</button> <button class="btn ghost sm" id="unl">تغيير</button></div>`
       : nm ? (TH() && !can('createFiles') ? `<div class="newp">🔒 اختر المريض من القائمة — لا تملك صلاحية إضافة ملف جديد</div>` : `<div class="newp">🆕 مريض جديد — سيُنشأ له ملف تلقائياً باسم «${esc(nm)}» عند الحفظ</div>`) : '';
     $('#histBox').innerHTML = p ? `<div class="lbl" style="margin:12px 0 4px">📋 سجل المواعيد السابقة لهذا المريض</div>${histHTML(patientAppts(pid, a.id), sec)}` : '';
@@ -1235,7 +1297,9 @@ function apptModal(a) {
     if (liveRedraw && current === 'appts') liveRedraw(); return true;
   }
   const wasDone = a.status === 'done';
-  if ($('#ok')) $('#ok').onclick = () => { if (limAppt() && tid !== myTid()) return toast('يمكنك حجز المواعيد باسمك فقط'); const dv = $('#ad').value || a.date, sn = $('#asn').value; if (save()) { closeModal(); toast(isNew ? 'تم حجز الموعد وربطه بملف المريض' : 'تم الحفظ');
+  if ($('#ok')) $('#ok').onclick = () => { if (limAppt() && tid !== myTid()) return toast('يمكنك حجز المواعيد باسمك فقط'); const dv = $('#ad').value || a.date, sn = $('#asn').value;
+    if (st !== 'cancelled' && st !== 'absent' && devCheck().length && !devAck) { devAck = true; $('#ok').classList.add('warn'); $('#ok').textContent = '⚠️ حجز رغم التضارب'; $('#devWarn').scrollIntoView({ block: 'center' }); return toast('⚠️ يوجد تضارب على الجهاز — راجع التنبيه'); }
+    if (save()) { closeModal(); toast(isNew ? 'تم حجز الموعد وربطه بملف المريض' : 'تم الحفظ');
     const pp = getP(pid); if (st === 'done' && !wasDone && pp && canEditP(pp)) { const th = therapists(sec).find(t => t.id === tid); setTimeout(() => progressModal(pp, { date: dv, no: sn, by: th ? th.name : '', fromAppt: true }), 250); } } };
   $('#cn').onclick = closeModal; $('#mc').onclick = closeModal;
   if ($('#del')) $('#del').onclick = () => { DB.deleteAppt(a); closeModal(); if (liveRedraw) liveRedraw(); toast('تم حذف الموعد'); };
