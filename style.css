@@ -487,6 +487,13 @@ tr.devx td{background:#fdecea}
 .devwarn{margin-top:8px;font-size:15px}
 .btn.warn{background:var(--danger)!important;color:#fff!important}
 .mv-list{line-height:1.9;padding-inline-start:20px;margin:6px 0 10px}
+.mhist{border:1.5px solid var(--line);border-radius:12px;background:#f8fbfc;margin:0 0 12px;overflow:hidden}
+.mhist.empty{padding:10px 14px;color:var(--muted)}
+.mhist-t{font-weight:800;color:var(--navy);padding:8px 12px;border-bottom:1px solid var(--line);background:var(--teal-l)}
+.mhist-b{max-height:230px;overflow:auto}
+table.prog.mini{margin:0;font-size:13.5px} table.prog.mini td,table.prog.mini th{padding:4px 6px;white-space:nowrap}
+table.prog.mini thead th{position:sticky;top:0;background:#eef4f7;z-index:1}
+table.prog.mini tr.cur td{background:#fff7d6}
 .fin-sum{background:#fdecea;border:1.5px solid #f3b8b1;color:#8f1d12;border-radius:10px;padding:10px 14px;margin-bottom:10px;font-size:16px}
 .fin-sec{color:var(--navy);margin:16px 0 8px}
 .fin-tbl{overflow-x:auto;border:1.5px solid var(--line);border-radius:10px}

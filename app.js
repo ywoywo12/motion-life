@@ -806,6 +806,14 @@ function compareModal(p) {
   $('#cA').onchange = () => show('#cA', '#iA'); $('#cB').onchange = () => show('#cB', '#iB'); show('#cA', '#iA'); show('#cB', '#iB');
   $('#mc').onclick = closeModal;
 }
+/* القياسات السابقة (التقييم الأولي + الجلسات) أعلى نافذة قياسات الجلسة */
+function measHistHTML(p, editId) {
+  const pts = progPoints(p);
+  const c = (k, v) => isNum(v) ? `<span class="sv" style="--c:${scaleColor(k, v)}">${v}</span>` : '<span class="hint">—</span>';
+  if (!pts.length) return `<div class="mhist empty">لا توجد قياسات سابقة بعد. قيم <b>التقييم الأولي</b> تُسجَّل في «ملف المريض والتقييم» وتظهر هنا تلقائياً.</div>`;
+  return `<div class="mhist"><div class="mhist-t">📋 القياسات السابقة <small>(${pts.length})</small></div><div class="mhist-b"><table class="slog prog mini"><thead><tr><th>القياس</th><th>التاريخ</th><th>الألم</th><th>التشنج</th><th>قوة علوي</th><th>قوة سفلي</th><th>التوازن</th><th>الأداء</th><th>المعالج</th></tr></thead><tbody>
+    ${pts.map(r => `<tr class="${r.base ? 'base' : r.re ? 're' : ''}${editId && r.id === editId ? ' cur' : ''}"><td><b>${esc(r.label)}</b>${editId && r.id === editId ? ' <small class="hint">(قيد التعديل)</small>' : ''}</td><td>${esc(r.date || '')}</td><td>${c('pain', r.pain)}</td><td>${c('spasm', r.spasm)}</td><td>${c('mmtU', r.mmtU)}</td><td>${c('mmtL', r.mmtL)}</td><td>${c('balance', r.balance)}</td><td>${c('func', r.func)}</td><td>${esc(r.base ? (p.therapist || '') : (r.by || ''))}</td></tr>`).join('')}</tbody></table></div></div>`;
+}
 /* نافذة تسجيل قياسات الجلسة */
 function progressModal(p, preset) {
   preset = preset || {};
@@ -816,6 +824,7 @@ function progressModal(p, preset) {
   const v = Object.assign({}, r);
   const names = therapists(p.section).map(t => t.name); if (r.by && !names.includes(r.by)) names.unshift(r.by);
   openModal(`<div class="modal-h"><h3>📈 قياسات الجلسة — ${esc(p.name || '')}</h3><span class="spacer"></span><button class="x" id="mc">×</button></div>
+    ${measHistHTML(p, ex && ex.id)}
     ${preset.fromAppt ? '<div class="help" style="margin:0 0 10px">✓ تم تسجيل الحضور. سجّل قياسات هذه الجلسة لمتابعة تطور الحالة (أو اضغط «تخطي»).</div>' : ''}
     <div class="pform">
       <div class="fcol"><span class="lbl">التاريخ</span><input type="date" id="mD" value="${esc(r.date)}"></div>
@@ -831,6 +840,7 @@ function progressModal(p, preset) {
     </div>
     <div class="fcol" style="margin-top:10px"><span class="lbl">ملاحظات / الاستجابة للعلاج</span><input id="mT" value="${esc(r.note || '')}"></div>
     <div class="modal-f"><button class="btn big" id="ok">✓ حفظ القياسات</button><button class="btn ghost" id="cn">${preset.fromAppt ? 'تخطي' : 'إلغاء'}</button></div>`);
+  { const hb = $('#modalBox .mhist-b'); if (hb) hb.scrollTop = hb.scrollHeight; }
   $$('#modalBox .scale').forEach(box => box.onclick = e => { const b = e.target.closest('button'); if (!b) return; const k = box.dataset.scale, n = +b.dataset.v; v[k] = v[k] === n ? null : n; paintScale(box, v[k]); });
   $('#mc').onclick = $('#cn').onclick = closeModal;
   $('#ok').onclick = () => {
