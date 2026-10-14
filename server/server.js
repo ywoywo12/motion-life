@@ -50,7 +50,7 @@ if (!users) { users = {}; ROLES.forEach(r => { const salt = crypto.randomBytes(8
 let sessions = readJSON(SESSF, {});
 const roleOf = u => (users[u] && users[u].role) || u;
 /* صلاحيات حساب المعالج (تعدّلها الإدارة) */
-const DEF_PERMS = { appts: true, patients: true, finance: true, library: true, devices: true, stats: false, phone: false, pay: false, allAppts: false, delFiles: false, bothSecs: false, editAll: true, editOwn: true, createFiles: true, prices: true, files: true };
+const DEF_PERMS = { appts: true, patients: true, finance: true, library: true, devices: true, stats: false, phone: false, pay: false, allAppts: false, delFiles: false, bothSecs: false, editAll: true, editOwn: true, createFiles: true, prices: true, files: true, moveFiles: false };
 /* هل المريض مرتبط بالمعالج (موعد باسمه أو جلسة مسجلة باسمه)؟ */
 const linkedSrv = (sec, pid, a) => ((db[sec].patients[pid] || {}).ownerTid && db[sec].patients[pid].ownerTid === a.tid) || Object.values(db[sec].appts).some(x => x.patientId === pid && (x.tid === a.tid || (!x.tid && x.by === a.name))) || ((db[sec].patients[pid] || {}).sessions || []).some(r => r && r.by === a.name);
 const permsOf = v => Object.assign({}, DEF_PERMS, (v && v.perms) || {});
@@ -271,6 +271,36 @@ async function api(req, res, url) {
     const t = setTimeout(() => { if (!done) { done = true; waiters.delete(w); send(res, 200, { changes: [], seq }); } }, 25000);
     waiters.add(w); req.on('close', () => { if (!done) { done = true; waiters.delete(w); clearTimeout(t); } });
     return;
+  }
+  /* نقل ملف مريض بين قسم النساء وقسم الرجال */
+  if (p === '/api/move' && req.method === 'POST') {
+    const { id, from, to } = await body(req);
+    if (!SECS.includes(from) || !SECS.includes(to) || from === to) return send(res, 400, { error: 'path' });
+    if (!allowed(a, from) || (a.role === 'therapist' && !a.perms.moveFiles)) return send(res, 403, { error: 'no_move' });
+    const pt = db[from].patients[id]; if (!pt) return send(res, 404, { error: 'nopatient' });
+    if (db[to].patients[id]) return send(res, 409, { error: 'exists' });
+    const T = new Date().toISOString().slice(0, 10), oldNo = pt.fileNo;
+    const nums = Object.values(db[to].patients).map(x => parseInt(x.fileNo, 10)).filter(n => !isNaN(n));
+    const clash = Object.values(db[to].patients).some(x => String(x.fileNo) === String(pt.fileNo));
+    const np = Object.assign({}, pt, { section: to, ownerTid: '', updated: new Date().toISOString() });
+    if (clash || !pt.fileNo) np.fileNo = String((nums.length ? Math.max(...nums) : 0) + 1);
+    np.moves = (pt.moves || []).concat([{ from, to, at: new Date().toISOString(), by: a.name || ({ admin: 'الإدارة', women: 'قسم النساء', men: 'قسم الرجال' })[a.user] || a.user, fileNo: oldNo, newNo: np.fileNo }]);
+    delete db[from].patients[id]; db[to].patients[id] = np;
+    broadcast(from, { op: 'del', sec: from, coll: 'patients', id, origin: '' });
+    broadcast(to, { op: 'put', sec: to, coll: 'patients', id, doc: np, origin: '' });
+    // المواعيد: السابقة تنتقل كسجل، والقادمة المحجوزة تُلغى (أوقات القسمين مختلفة) ويجب إعادة حجزها
+    let cancelled = 0, moved = 0;
+    Object.entries(db[from].appts).filter(([, x]) => x.patientId === id).forEach(([aid, x]) => {
+      const nx = Object.assign({}, x, { section: to });
+      if (x.date >= T && (x.status || 'booked') === 'booked') { nx.status = 'cancelled'; nx.note = ((x.note || '') + ' — نُقل الملف إلى ' + (to === 'men' ? 'قسم الرجال' : 'قسم النساء')).trim(); cancelled++; }
+      delete db[from].appts[aid]; db[to].appts[aid] = nx; moved++;
+      broadcast(from, { op: 'del', sec: from, coll: 'appts', id: aid, origin: '' });
+      broadcast(to, { op: 'put', sec: to, coll: 'appts', id: aid, doc: nx, origin: '' });
+    });
+    // الصور والملفات المرفوعة
+    try { const src = path.join(FILES, from, id); if (fs.existsSync(src)) { fs.mkdirSync(path.join(FILES, to), { recursive: true }); fs.renameSync(src, path.join(FILES, to, id)); } } catch (e) { console.error('move files', e.message); }
+    persist();
+    return send(res, 200, { ok: true, fileNo: np.fileNo, oldNo, renumbered: np.fileNo !== oldNo, cancelled, moved });
   }
   if (p === '/api/backup' && a.role === 'admin') {
     res.writeHead(200, { 'Content-Type': 'application/json', 'Content-Disposition': 'attachment; filename="motion-life-server-backup-' + new Date().toISOString().slice(0, 10) + '.json"' });

@@ -268,7 +268,7 @@ M._applyMsg = function (m) {
   if (m.op === 'del') map.delete(m.id);
   else if (remote) {
     const d = JSON.parse(JSON.stringify(m.doc)); d.id = m.id; if (m.sec !== 'admin') d.section = m.sec; const cur = map.get(m.id);
-    if (cur) { const dirty = this.dirty[m.id]; Object.keys(d).forEach(k => { if (!dirty || !dirty.has(k)) cur[k] = d[k]; }); } else map.set(m.id, d);
+    if (cur) { const dirty = this.dirty[m.id]; Object.keys(d).forEach(k => { if (!dirty || !dirty.has(k)) cur[k] = d[k]; }); } else map.set(m.id, m.coll === 'patients' ? normP(d) : d);
   }
   if (remote) this.emit('data', { kind: m.coll, ids: [m.id], remote: true });
 };
@@ -340,6 +340,29 @@ M._put = function (sec, coll, id, obj, keys) {
   return this._flush();
 };
 M._del = function (sec, coll, id) { this._queue({ op: 'del', sec, coll, id }); this._saveCache(); return this._flush(); };
+/* نقل ملف مريض بين القسمين (مع مواعيده وصوره على خادم المركز) */
+M.movePatient = async function (p, to) {
+  const from = p.section;
+  if (this.mode === 'server') {
+    let r; try { r = await this._req('POST', '/api/move', { id: p.id, from, to }); } catch (e) { return { ok: false, error: 'offline' }; }
+    if (r.ok) await this._pull();
+    return r;
+  }
+  const same = [...this.patients.values()].filter(x => x.section === to), nums = same.map(x => parseInt(x.fileNo, 10)).filter(n => !isNaN(n));
+  const oldNo = p.fileNo, clash = same.some(x => String(x.fileNo) === String(p.fileNo));
+  const np = Object.assign({}, p, { section: to, ownerTid: '' }); if (clash || !p.fileNo) np.fileNo = String((nums.length ? Math.max(...nums) : 0) + 1);
+  np.moves = (p.moves || []).concat([{ from, to, at: new Date().toISOString(), by: this.label(), fileNo: oldNo, newNo: np.fileNo }]);
+  if (this.mode === 'cloud') { await col(from, 'patients').doc(p.id).delete(); const d = clean(np); delete d.id; await col(to, 'patients').doc(p.id).set(d); }
+  else lsUpsert('ml_patients', np);
+  let cancelled = 0; const T = new Date().toISOString().slice(0, 10);
+  for (const a of [...this.appts.values()].filter(x => x.patientId === p.id && x.section === from)) {
+    const na = Object.assign({}, a, { section: to }); if (a.date >= T && (a.status || 'booked') === 'booked') { na.status = 'cancelled'; cancelled++; }
+    if (this.mode === 'cloud') { await col(from, 'appts').doc(a.id).delete(); const d = clean(na); delete d.id; await col(to, 'appts').doc(a.id).set(d); } else lsUpsert('ml_appts', na);
+    this.appts.set(a.id, na);
+  }
+  this.patients.set(p.id, np);
+  return { ok: true, fileNo: np.fileNo, oldNo, renumbered: np.fileNo !== oldNo, cancelled };
+};
 M._mapOf = function (coll) { return { patients: this.patients, appts: this.appts, ledger: this.ledger, staff: this.staffDocs }[coll] || null; };
 /* المحاسبة وملفات الموظفين (للإدارة فقط) */
 M.saveAdm = function (coll, o) {

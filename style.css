@@ -486,6 +486,7 @@ tr.devx td{background:#fdecea}
 .devsec h4{margin:4px 0;color:var(--navy)}
 .devwarn{margin-top:8px;font-size:15px}
 .btn.warn{background:var(--danger)!important;color:#fff!important}
+.mv-list{line-height:1.9;padding-inline-start:20px;margin:6px 0 10px}
 .fin-sum{background:#fdecea;border:1.5px solid #f3b8b1;color:#8f1d12;border-radius:10px;padding:10px 14px;margin-bottom:10px;font-size:16px}
 .fin-sec{color:var(--navy);margin:16px 0 8px}
 .fin-tbl{overflow-x:auto;border:1.5px solid var(--line);border-radius:10px}

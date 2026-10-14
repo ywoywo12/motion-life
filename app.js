@@ -22,7 +22,7 @@ const TH = () => !!(DB.isTherapist && DB.isTherapist());
 const myTid = () => (DB.me && DB.me.tid) || '';
 const myName = () => (DB.me && DB.me.name) || '';
 const secOf = () => TH() ? DB.me.section : DB.role;
-const DEF_PERMS = { appts: true, patients: true, finance: true, library: true, devices: true, stats: false, phone: false, pay: false, allAppts: false, delFiles: false, bothSecs: false, editAll: true, editOwn: true, createFiles: true, prices: true, files: true };
+const DEF_PERMS = { appts: true, patients: true, finance: true, library: true, devices: true, stats: false, phone: false, pay: false, allAppts: false, delFiles: false, bothSecs: false, editAll: true, editOwn: true, createFiles: true, prices: true, files: true, moveFiles: false };
 const can = k => !TH() || !!((DB.me && DB.me.perms) || DEF_PERMS)[k];
 const hidePhone = () => TH() && !can('phone');
 const hidePrices = () => TH() && !can('prices');
@@ -33,8 +33,9 @@ const canStats = () => DB.role === 'admin' || (TH() && can('stats'));
 const pageOK = k => ['acc', 'staff'].includes(k) ? DB.role === 'admin' : !TH() || ['home', 'settings', 'p', 'setup', ''].includes(k) || (k === 'stats' ? can('stats') : can(k));
 const PERM_LIST = [['appts', 'المواعيد'], ['patients', 'ملفات المرضى'], ['finance', 'المتابعة المالية'], ['stats', 'إحصائيات المعالجين'], ['library', 'مكتبة التمارين'], ['devices', 'الأجهزة والبروتوكولات'],
   ['phone', 'رؤية أرقام هواتف المرضى'], ['pay', 'تعديل الدفعات (ورؤية كل الملفات في المتابعة المالية)'], ['allAppts', 'إدارة مواعيد كل المعالجين (حجز/تعديل/حذف)'], ['delFiles', 'حذف ملفات المرضى'], ['bothSecs', 'الوصول للقسمين (النساء والرجال)'],
-  ['editAll', 'تعديل ملفات كل المرضى'], ['editOwn', 'تعديل ملفات مرضاه فقط (المرتبطين به بموعد أو جلسة)'], ['createFiles', 'إضافة ملف طبي جديد'], ['prices', 'رؤية أسعار الجلسات والدفعات (عدد الجلسات والمبلغ المتبقي يبقيان ظاهرين)'], ['files', 'مشاهدة ورفع الصور والتقارير والملفات (حتى لو كان الملف للعرض فقط)']];
+  ['editAll', 'تعديل ملفات كل المرضى'], ['editOwn', 'تعديل ملفات مرضاه فقط (المرتبطين به بموعد أو جلسة)'], ['createFiles', 'إضافة ملف طبي جديد'], ['prices', 'رؤية أسعار الجلسات والدفعات (عدد الجلسات والمبلغ المتبقي يبقيان ظاهرين)'], ['files', 'مشاهدة ورفع الصور والتقارير والملفات (حتى لو كان الملف للعرض فقط)'], ['moveFiles', 'نقل ملفات المرضى بين قسم النساء وقسم الرجال']];
 /* هل يستطيع الحساب تعديل ملف هذا المريض؟ */
+const canMove = () => DB.role === 'admin' || DB.role === 'women' || DB.role === 'men' || (TH() && can('moveFiles'));
 const canFiles = p => !TH() || can('files') || canEditP(p);
 const canEditP = p => !TH() || can('editAll') || (can('editOwn') && !!p && linkedTo(p, myTid(), myName()));
 /* الحالة المالية لكل ملف */
@@ -269,6 +270,7 @@ function patientView(p, tab) {
     <span class="spacer"></span><span class="saved" id="sv"></span>
     <button class="btn ghost sm" id="prt">🖨️ طباعة الملف</button>
     <button class="btn ghost sm" id="prtEx">🖨️ ورقة تمارين للمريض</button>
+    ${canMove() ? `<button class="btn light sm" id="moveP">🔀 نقل إلى ${p.section === 'women' ? 'قسم الرجال' : 'قسم النساء'}</button>` : ''}
     ${TH() && !can('delFiles') ? '' : '<button class="btn danger sm" id="delP">حذف</button>'}</div>`;
   return tabs + (tab === '3' ? page3(p) : tab === '2' ? page2(p) : tab === '0' ? page0(p) : page1(p));
 }
@@ -569,6 +571,22 @@ function bindPatient(p, tab) {
   if ($('#addMeas2')) $('#addMeas2').onclick = () => progressModal(p);
   $('#prt').addEventListener('click', () => printPatient(p, false));
   $('#prtEx').addEventListener('click', () => p.exercises.length ? printPatient(p, true) : toast('أضف تمارين في الخطة العلاجية أولاً'));
+  if ($('#moveP')) $('#moveP').onclick = () => {
+    const to = p.section === 'women' ? 'men' : 'women';
+    const up = [...DB.appts.values()].filter(x => x.patientId === p.id && x.date >= today() && (x.status || 'booked') === 'booked').length;
+    openModal(`<div class="modal-h"><h3>🔀 نقل ملف ${esc(p.name || 'المريض')} إلى ${SEC[to]}؟</h3><span class="spacer"></span><button class="x" id="mc">×</button></div>
+      <ul class="mv-list"><li>ينتقل الملف كاملاً (التقييم، الخطة، الجلسات، الدفعات، القياسات، الصور) من ${SEC[p.section]} إلى <b>${SEC[to]}</b>.</li>
+        <li>المواعيد السابقة تنتقل معه كسجل.${up ? ` <b class="xw">${up} موعد قادم محجوز سيُلغى</b> لأن أوقات القسمين مختلفة — أعد حجزه في ${SEC[to]}.` : ''}</li>
+        <li>إذا كان رقم الملف ${esc(p.fileNo)} مستخدماً في ${SEC[to]} يُعطى رقماً جديداً تلقائياً.</li>
+        <li>يُلغى «المعالج المسؤول» — اختر معالجاً من ${SEC[to]} بعد النقل.</li></ul>
+      <div class="modal-f"><button class="btn big" id="mvOk">✓ نعم، انقل الملف</button><button class="btn ghost" id="mvNo">إلغاء</button></div>`);
+    $('#mc').onclick = $('#mvNo').onclick = closeModal;
+    $('#mvOk').onclick = async () => { $('#mvOk').disabled = true; clearTimeout(t); const ks = [...dirty]; dirty.clear(); if (ks.length) await DB.savePatient(p, ks);
+      const r = await DB.movePatient(p, to); closeModal();
+      if (!r.ok) return toast(r.error === 'offline' ? 'لا يوجد اتصال بخادم المركز' : r.status === 403 || r.error === 'no_move' ? '🔒 لا تملك صلاحية نقل الملفات' : 'تعذّر نقل الملف');
+      toast(`تم نقل الملف إلى ${SEC[to]}${r.renumbered ? ' برقم ملف جديد ' + r.fileNo : ''}${r.cancelled ? ' — أُلغي ' + r.cancelled + ' موعد قادم' : ''}`);
+      if (DB.sections().includes(to)) { go('p/' + p.id + '/1'); render(); } else go('patients'); };
+  };
   if ($('#delP')) $('#delP').addEventListener('click', () => {
     openModal(`<div class="modal-h"><h3>حذف ملف ${esc(p.name || 'المريض')}؟</h3></div><p>لا يمكن التراجع عن الحذف، وسيُحذف من كل الأجهزة.</p>
     <div class="row"><button class="btn danger" id="yes">نعم، احذف</button><button class="btn ghost" id="no">إلغاء</button></div>`);
@@ -1506,8 +1524,9 @@ function unlinkRefund(e, keepCancel) {
 }
 document.addEventListener('click', e => { if (e.target.id === 'reactP' && curP && isAdmin()) { curP.cancelled = false; DB.savePatient(curP, ['cancelled']); render(); toast('تم إعادة تفعيل الملف'); } });
 function noticesHTML(p) {
-  const N = p.notices || []; if (!N.length && !p.cancelled) return '';
-  return N.map(n => `<div class="alert red">🔔 <b>${n.cancel ? 'ألغى المريض العلاج' : 'مرتجع للمريض'}</b> بتاريخ ${esc(n.date || '')}${!TH() && n.amount ? ' — تم إرجاع مبلغ <b>' + fmt(num(n.amount)) + '</b>' : ' — تم إرجاع مبلغ للمريض'}${n.reason ? ' — السبب: ' + esc(n.reason) : ''}</div>`).join('')
+  const mv = (p.moves || []).slice(-1)[0], mvH = mv ? `<div class="alert amber">🔀 نُقل هذا الملف من ${SEC[mv.from] || ''} إلى ${SEC[mv.to] || ''} بتاريخ ${esc(String(mv.at || '').slice(0, 10))}${mv.by ? ' — بواسطة ' + esc(mv.by) : ''}${mv.newNo && mv.newNo !== mv.fileNo ? ` — رقم الملف القديم ${esc(mv.fileNo)}` : ''}</div>` : '';
+  const N = p.notices || []; if (!N.length && !p.cancelled) return mvH;
+  return mvH + N.map(n => `<div class="alert red">🔔 <b>${n.cancel ? 'ألغى المريض العلاج' : 'مرتجع للمريض'}</b> بتاريخ ${esc(n.date || '')}${!TH() && n.amount ? ' — تم إرجاع مبلغ <b>' + fmt(num(n.amount)) + '</b>' : ' — تم إرجاع مبلغ للمريض'}${n.reason ? ' — السبب: ' + esc(n.reason) : ''}</div>`).join('')
     + (p.cancelled ? `<div class="alert amber">⛔ هذا الملف موقوف (العلاج ملغى) ولا يظهر في المتابعة المالية.${isAdmin() ? ' <button class="btn light sm" id="reactP" type="button">↺ إعادة تفعيل الملف</button>' : ''}</div>` : '');
 }
 
